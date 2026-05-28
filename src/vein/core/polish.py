@@ -156,11 +156,11 @@ def _parse_json_response(content: str) -> list[dict] | None:
 # ── fallback (no ollama) ─────────────────────────────────────────
 
 def auto_title(raw_text: str) -> str:
-    """Generate a basic title from raw text (first sentence, ≤60 chars)."""
+    """Generate a basic title from raw text (first sentence, ≤100 chars)."""
     first = raw_text.strip().splitlines()[0].strip()
     first = re.sub(r"[.!?]+$", "", first)
-    if len(first) > 60:
-        first = first[:57] + "..."
+    if len(first) > 100:
+        first = first[:97] + "…"
     return first
 
 

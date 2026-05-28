@@ -137,7 +137,14 @@ class VeinStore:
 
     # ── write ─────────────────────────────────────────────────────
 
-    def write_entry(self, entry: Entry) -> Path:
+    def write_entry(
+        self,
+        entry: Entry,
+        *,
+        auto_index: bool = True,
+        base_url: str = "http://localhost:11434",
+        embed_model: str = "nomic-embed-text",
+    ) -> Path:
         subdir = ENTRY_DIRS.get(entry.type, "lore")
         dest_dir = self.vein_dir / subdir
         dest_dir.mkdir(exist_ok=True)
@@ -146,6 +153,14 @@ class VeinStore:
         entry._path = path
         # invalidate brief cache
         self._invalidate_brief()
+        # update index
+        if auto_index:
+            try:
+                idx = self.open_index()
+                idx.upsert(entry, base_url=base_url, embed_model=embed_model, silent=True)
+                idx.close()
+            except Exception:
+                pass  # index failure is non-fatal
         return path
 
     def _invalidate_brief(self) -> None:
@@ -205,6 +220,15 @@ class VeinStore:
             d = self.vein_dir / subdir
             result[type_key] = len(list(d.glob("*.md"))) if d.is_dir() else 0
         return result
+
+    # ── index ─────────────────────────────────────────────────────
+
+    def open_index(self) -> "VeinIndex":
+        """Open (or create) the SQLite index at .vein/index/vein.db."""
+        from .index import VeinIndex
+        db_path = self.vein_dir / "index" / "vein.db"
+        db_path.parent.mkdir(exist_ok=True)
+        return VeinIndex(db_path)
 
     # ── brief cache ───────────────────────────────────────────────
 
