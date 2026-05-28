@@ -1,0 +1,116 @@
+# config/ai_providers.yaml
+# Vein AI provider settings — model names, endpoints, timeouts.
+# Sensitive values (API keys) go in .env, NOT here.
+#
+# Usage in Python:
+#   from vein.config import load_ai_providers
+#   cfg = load_ai_providers()   # merges this file + .env
+
+# ─────────────────────────────────────────────────────────────
+# LOCAL (ollama / rapid-mlx) — Phase 0 primary backend
+# ─────────────────────────────────────────────────────────────
+local:
+  backend: ollama              # ollama | rapid-mlx
+  base_url: http://localhost:11434
+
+  # model role assignments
+  embed_model:   nomic-embed-text   # sentence embeddings (.vein/index/)
+  digest_model:  llama3.2:3b        # vein brief / vein recall synthesis
+  polish_model:  qwen2.5-coder:7b   # vein log capture-time polish
+  analyze_model: deepseek-r1:14b    # vein auto (heavy git-diff analysis)
+
+  timeout_seconds: 120
+  # rapid-mlx override (Apple Silicon, 4.2x faster than ollama)
+  # backend: rapid-mlx
+  # base_url: http://localhost:8080
+
+# ─────────────────────────────────────────────────────────────
+# CLAUDE (Anthropic)
+# API key: ANTHROPIC_API_KEY in .env
+# ─────────────────────────────────────────────────────────────
+claude:
+  enabled: false               # flip to true when using Claude API directly
+  base_url: https://api.anthropic.com
+  api_version: "2023-06-01"
+
+  # model aliases — use these names in vein commands
+  models:
+    fast:    claude-haiku-4-5-20251001    # cheapest, quick tasks
+    default: claude-sonnet-4-6            # balanced
+    best:    claude-opus-4-6              # heavy reasoning
+
+  # which role uses which alias
+  roles:
+    recall_synthesis: fast          # vein recall final digest
+    log_polish:       default       # vein log polish (if not using local)
+    ask:              default       # vein ask
+    review:           best          # vein review / audit
+
+  timeout_seconds: 60
+  max_tokens: 4096
+
+# ─────────────────────────────────────────────────────────────
+# GEMINI (Google)
+# API key: GEMINI_API_KEY in .env
+# ─────────────────────────────────────────────────────────────
+gemini:
+  enabled: false
+  base_url: https://generativelanguage.googleapis.com/v1beta
+
+  models:
+    fast:    gemini-2.5-flash
+    default: gemini-2.5-flash
+    best:    gemini-2.5-pro
+
+  roles:
+    recall_synthesis: fast
+    log_polish:       default
+    ask:              default
+    review:           best
+
+  timeout_seconds: 60
+  max_tokens: 4096
+
+# ─────────────────────────────────────────────────────────────
+# OPENAI / CODEX
+# API key: OPENAI_API_KEY in .env
+# ─────────────────────────────────────────────────────────────
+openai:
+  enabled: false
+  base_url: https://api.openai.com/v1
+
+  models:
+    fast:    gpt-4o-mini
+    default: gpt-4o
+    best:    o3
+
+  roles:
+    recall_synthesis: fast
+    log_polish:       default
+    ask:              default
+    review:           best
+
+  timeout_seconds: 60
+  max_tokens: 4096
+
+# ─────────────────────────────────────────────────────────────
+# ACTIVE ROUTING — which provider handles each task
+# Priority: first enabled provider in list wins.
+# "local" always available (no API key needed).
+# ─────────────────────────────────────────────────────────────
+routing:
+  embed:            [local]                   # always local, no cloud embedding
+  digest:           [local]                   # vein brief / recall synthesis
+  polish:           [local]                   # vein log polish
+  analyze:          [local]                   # vein auto (git hook)
+  ask:              [local, claude, gemini]   # vein ask (fallback to cloud if local too slow)
+  review:           [claude, gemini, openai]  # vein review (cloud-first, heavy reasoning)
+
+# ─────────────────────────────────────────────────────────────
+# BUDGET TIERS (for vein recall --budget)
+# ─────────────────────────────────────────────────────────────
+budget:
+  2k:    {max_tokens: 2048,   model_role: fast}    # default, fits any context window
+  32k:   {max_tokens: 32768,  model_role: default} # mid-tier AI server
+  200k:  {max_tokens: 200000, model_role: best}    # large-memory AI (future)
+  raw:   {max_tokens: null,   model_role: best}    # no compression, full lore dump

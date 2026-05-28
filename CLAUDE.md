@@ -1,21 +1,18 @@
 # Vein — Project Brief
 
-> 部分屬於 **Lode Vein** product family（Lode = file viewer 已存在；Vein = decision lore archive 本專案）。
-> 曾用名 ctx，2026-05-26 改名 → vein，2026-05-26 升級為 product family，見 [`docs/decisions.md` D-007](docs/decisions.md#d-007--專案改名為-vein採lode-vein-product-family-命名2026-05-26)。
->
-> **Decision & debug lore archive**，給人類 + 多個 LLM 協作用。
->
-> > **Lode finds the code. Vein remembers the why.**
->
-> CLI + (未來) MCP server。Local-first，**markdown-based**，git-friendly。
+**Decision & debug lore archive**，給人類 + 多個 LLM 協作用。
+
+> **Lode finds the code. Vein remembers the why.**
+
+CLI + (未來) MCP server。Local-first，**markdown-based**，git-friendly。
 
 ## 1. 專案概況
 
 - **產品名：** Vein
 - **Family marketing 名：** Lode Vein（對外講話 / blog / homepage 用）
 - **Split naming：** CLI = `vein`、PyPI = `lode-vein`、GitHub = `rex4ssd/vein`、Homebrew = `vein` via `rex4ssd/tap`
-- **位置：** `/Users/lion/Documents/vein/`（Session 0.10 已從 `ctx/` rename 完成）
-- **狀態：** Phase 0（docs scaffold 完成、改名 + family 命名拍板、Path D 確認，code 未開始）
+- **位置：** `/Users/lion/Documents/vein/`
+- **狀態：** Phase 0（docs scaffold 完成、Path D 確認，code 未開始）
 - **Positioning：** Path D — decision lore niche，**不是** code RAG broker（避開 7+ 競品紅海）
 - **Stack 預定：** Python 3.11+、Click（CLI）、ollama HTTP API、sqlite-vec、(後續) MCP SDK
 - **License 預定：** MIT（OSS 友善）
@@ -48,7 +45,7 @@ Vein 解法：把專案的 **decision & debug lore** 存進 `.vein/`（像 `.git
 3. README / docs_cloudflare 完整、陌生人 5 分鐘可上手
 
 **順手做（Phase 0 checklist）：**
-- [ ] 註冊 `lodevein` GitHub org（namespace 保留，5 分鐘的事）
+- [ ] 註冊 `lodevein` GitHub org（namespace 保留）
 - [ ] 測試 `vein.dev` / `vein.app` domain availability
 
 **不做（明確 out-of-scope）：**
@@ -94,12 +91,13 @@ vein/
   CLAUDE.md                    ← 這份（精簡 index）
   docs/                        ← 內部開發 docs（繁中 + 英術語）
     spec/
-      v0.1.md                  ← Phase 0 technical RFC（Path A/B 形態，待依 Path D 改寫）
+      v0.1.md                  ← Phase 0 technical RFC（待依 Path D 形態更新）
     strategy.md                ← 商業 / 戰略 / Open Core / Path D thesis（§11）
     competitive_landscape.md   ← 競品 audit（2026-05-26 snapshot）
     naming.md                  ← 改名 brainstorm + 拍板 vein + Lode Vein family
     working_style.md           ← Rex 偏好 + 工作模式（給 Claude 看）
-    decisions.md               ← 決策 log + 雷區（D-001~D-007）
+    decisions.md               ← 決策 log + 雷區（D-001~D-019）
+    data_format.md             ← .vein/ entry schema + capture pipeline 設計
     changelog.md               ← session-by-session 開發日誌
     architecture.md            ← (待寫，code 開工後補)
   docs_cloudflare/             ← 公開網站內容（英文為主，deploy 到 rexcode.app/vein）
@@ -123,11 +121,11 @@ vein/
 
 1. 讀本檔（你正在做這件事）
 2. 讀 [`docs/strategy.md`](docs/strategy.md) **§11 Path D thesis** — 知道現在的方向（decision lore archive）
-3. 讀 [`docs/spec/v0.1.md`](docs/spec/v0.1.md) — 知道技術初稿（Path A/B 形態，待依 Path D 改寫）
+3. 讀 [`docs/spec/v0.1.md`](docs/spec/v0.1.md) — 知道技術架構（注意：部分內容待依 Path D 更新）
 4. 讀 [`docs/competitive_landscape.md`](docs/competitive_landscape.md) — **知道我們進的是紅海還是藍海**
 5. 讀 [`docs/naming.md`](docs/naming.md) — 為什麼叫 vein
 6. 讀 [`docs/working_style.md`](docs/working_style.md) — 知道怎麼跟 Rex 共事
-7. 摸決策 / 雷區前讀 [`docs/decisions.md`](docs/decisions.md)（D-007 名字、D-006 商業模式）
+7. 摸決策 / 雷區前讀 [`docs/decisions.md`](docs/decisions.md)
 8. 要找歷史 → grep [`docs/changelog.md`](docs/changelog.md)
 9. 摸公開網站內容前讀 [`docs_cloudflare/_README.md`](docs_cloudflare/_README.md)
 10. 改完跑 sanity check（一旦有 code 之後補）：

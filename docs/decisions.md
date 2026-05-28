@@ -25,11 +25,11 @@
 - 寫起來短：CLI 800 行 Python vs 2000+ 行 Rust
 
 **Trade-off accepted:**
-- 啟動時間 ~200ms（Python interpreter），ctx ask 整體要 6-10s（ollama 占大頭），200ms 不痛
-- 將來如果 ctx 變 daemon（v0.3 MCP server），Python 也夠（aiohttp / fastmcp）
+- 啟動時間 ~200ms（Python interpreter），`vein recall` 整體要 6-10s（ollama 占大頭），200ms 不痛
+- 將來如果 vein 變 daemon（v0.3 MCP server），Python 也夠（aiohttp / fastmcp）
 
 **Revisit when:**
-- ctx ask 變成熱路徑、單次跑 < 1s（不太可能）
+- `vein recall` 變成熱路徑、單次跑 < 1s（不太可能）
 - 要 single-binary distribution（用 PyInstaller 或 Rust 重寫 core）
 
 ---
@@ -41,7 +41,7 @@
 **Choice:** `sqlite-vec`（asg017 那個 extension）。
 
 **Why:**
-- **單檔**：`.ctx/index/embeddings.db` 一個檔，跨機器 rsync 就好
+- **單檔**：`.vein/index/embeddings.db` 一個檔，跨機器 rsync 就好
 - **無 daemon**：chromadb 要起 server、qdrant 要 docker，sqlite 零配置
 - **熟悉**：Python `sqlite3` stdlib，sqlite-vec 是 extension
 - **夠用**：v0.1 預期專案 ≤ 10K chunks，sqlite-vec 在這 scale 表現好（< 100ms query）
@@ -50,7 +50,7 @@
 - `chromadb`：要 daemon、有 telemetry default、檔散
 - `faiss`：學術出身、Python binding 笨重、index 不易 inspect
 - `qdrant`：太重、要 docker
-- pure-numpy in-memory：每次 ctx ask 都 load 全部 vector，慢
+- pure-numpy in-memory：每次 `vein recall` 都 load 全部 vector，慢
 
 **Revisit when:**
 - 專案 > 100K chunks 且 query 變慢
@@ -96,57 +96,74 @@
 
 ---
 
-### D-008 — Visibility: private 現在，v0.3 flip public（2026-05-26）
+### D-005 — `.vein/cache/` 進 .gitignore，`.vein/config.yaml` 進 git
 
-**Date:** 2026-05-26 (Session 0.11)
+**Date:** 2026-05-26
 
-**Choice:** `rex4ssd/vein` 建為 **private repo**，達到以下三個條件後 flip 成 public：
+**Choice:** 預設 `.gitignore`：
 
-1. **三個核心命令真的能跑：** `vein init` + `vein log` + `vein recall`
-2. **Dogfood on Lode 至少 2 週：** 真實寫過 ≥ 10 條 decision/lore，retrieval 品質確認
-3. **README / docs_cloudflare 完整：** 陌生人 30 秒能看懂、5 分鐘能上手
+```
+.vein/cache/
+.vein/index/embeddings.db
+.vein/memory/
+```
 
-預期觸發時程：Phase 0 完成後、Phase 0.3（MCP server）之前。
+進 git：
 
-**Why（為什麼選 B 不選 A/C）：**
+```
+.vein/config.yaml
+.vein/digests/
+.vein/.gitignore        ← 自己
+```
 
-| 路徑 | 採 / 拒 | 理由 |
-|---|---|---|
-| **A. Public from day 1** | ❌ 拒 | Spec 還在 churn（Path A/B/C/D、改名 3 次、thesis pivot 1 次）；public 看見 churn 觀感差；無 working product 給人試 |
-| **B. Private now, v0.3 flip public** | ✅ 採 | 第一次接觸 Vein 的人看到 working product 而非流產 spec；spec breaking change 不受外部牽制；跟 Lode 私有 + public release 同 pattern |
-| **C. Public + Alpha tag** | ❌ 拒 | 「Alpha」標籤對多數人沒擋；早期 issue noise 大於收穫 |
-
-**參照 pattern：** Lode 自己也是 `rex4ssd/lode` private dev + `rex4ssd/lode-releases` public binaries 雙 repo。Vein 第一階段不需 release repo，直接 private → 將來 flip public。
-
-**Public 之前要做的事（pre-flip checklist）：**
-
-- [ ] `vein init` 能跑
-- [ ] `vein log decision/lore "..."` 能存進 `.vein/decisions/` 或 `.vein/debug_lore/`
-- [ ] `vein recall "<query>"` retrieval 跑得起來、品質可接受
-- [ ] Dogfood on Lode ≥ 2 週、≥ 10 條真實 entries
-- [ ] LICENSE 檔（MIT）
-- [ ] `docs_cloudflare/index.md` polish 完整
-- [ ] `docs_cloudflare/install.md` 真實可跑（不是 placeholder）
-- [ ] README.md（從 `docs_cloudflare/index.md` 精簡版）
-- [ ] CONTRIBUTING.md 雛形（先寫「目前 not accepting external contributions, 等 v0.3 後開放」）
-- [ ] `.github/ISSUE_TEMPLATE/` 雛形
-
-**Reserve `lodevein` GitHub org（順手做）：**
-
-- Phase 0 checklist 加：**註冊 `lodevein` org**（5 分鐘的事，保 5 年）
-- **不一定要用** — Lode 已經在 `rex4ssd/lode`（App Store / Direct Sale cert 簽這個），不要動
-- 預留 namespace 給未來 family 擴張（如果真的有 Seam/Shaft）
-- 預防別人註冊變蹭名
-
-**Revisit when:**
-- Lode 自己 dogfood Vein 一個月後，如果發現需要外部視角才能改進，可考慮提早 flip
-- 若有人在 2026 下半年宣布類似 "decision lore" product 搶 first-mover 名分，可考慮提早 flip 搶 mindshare
+**Why:**
+- `config.yaml` 是 source of truth，要跟 code 一起 version
+- `digests/` 是人寫 / 半自動產的高價值產出（週報、topic digest），值得 commit
+- `cache/` / `embeddings.db` 是 derived view，重建成本可接受，不該膨脹 repo
+- `memory/sessions.jsonl` 含個人 query history，可能含敏感 keyword，預設不 commit
 
 ---
 
-### D-007 — 專案改名為 **vein**，採「Lode Vein」product family 命名（2026-05-26）
+### D-006 — 採 Open Core 商業模式（Vein OSS + Lode 付費 + 未來 Cloud 訂閱）
 
-**Date:** 2026-05-26 (Session 0.8 拍板 vein，0.9 升級為 product family)
+**Date:** 2026-05-26
+
+**Choice:** Vein CLI 100% MIT 開源、Lode 維持付費 GUI、Vein Cloud (v1.x+) 訂閱。Solo 功能完全不鎖。
+
+**Why:** 見 [`strategy.md`](strategy.md) 完整論述。摘要：
+- 個人功能不鎖 → 最大化 adoption funnel
+- 商業價值來自「協作 / 合規 / ops」不是「鎖功能」
+- Lode 整合是「不可替代附加值」，不是強制購買
+
+**Architectural constraints（Phase 0 就要做對的事）：**
+1. `config.yaml` 必有 `version:` field（未來 schema migration 用）
+2. `config.yaml` 預留 `team:` block（留空但保留 key 位置）
+3. chunks / digests 設計成「可逐筆獨立加密」（newline-delimited JSON、separate files）
+4. License 選 MIT（不選 AGPL/BUSL/SSPL，最大化 OSS adoption）
+5. **無 telemetry default**：連 phone-home / license check 都不裝
+6. Vein CLI **絕對不能對 Lode 有 hard dependency**：OSS 用戶完全不需碰 Lode 也能跑全功能
+
+**Trade-off accepted:**
+- MIT 允許 fork / 商業分支：可能未來有競品。我們的 moat 是「Rex 親自 dogfood 累積的工作流深度」 + Lode 整合，不是 license。
+- 「不鎖個人功能」= 部分 power user 永遠不付費。OK，他們是 adoption 的一部分。
+
+**Rejected:**
+- AGPL：嚇跑企業 internal use，無謂的傷害 adoption
+- BUSL（HashiCorp 那種延遲開源）：信任成本高，社群討厭
+- 全閉源賣 license key：完全違反 OSS funnel 邏輯，跟 Lode 重疊
+
+**Revisit when:**
+- 出現大廠 fork 並提供 cloud 服務搶生意（不太可能；他們會自己做）
+- OSS 採用率 < 100 stars 且持平 6 個月（戰略要重新檢討）
+
+**⚠️ Caveat（2026-05-26 後加）：**
+D-006 寫的時候假設「沒人在做這個 niche」。後來 web search 發現至少 7 個直接競品在做 per-project AI context broker（見 [`competitive_landscape.md`](competitive_landscape.md)）。Open Core 模式本身仍然成立，但**「Vein 作為獨立 OSS adoption funnel」這個前提要靠 Path D（decision lore niche）差異化才成立**。
+
+---
+
+### D-007 — 專案命名為 **vein**，採「Lode Vein」product family 命名
+
+**Date:** 2026-05-26
 
 **Choice:**
 - **產品本體名稱：** `vein`
@@ -163,7 +180,7 @@
 | Product C/D | PowerPoint / Outlook | (預留 Seam / Shaft) |
 | 用戶實際打的命令 | `word` / `excel` | `lode` / `vein` |
 
-每個 product 都有**獨立 CLI 短名 + 獨立識別**，但 marketing 上強 family 包裝。`Word` 的 CLI 不是 `office-word`；`vein` 的 CLI 也不是 `lode-vein`。
+每個 product 都有**獨立 CLI 短名 + 獨立識別**，但 marketing 上強 family 包裝。
 
 > Lode finds the code. Vein remembers the why.
 
@@ -180,27 +197,20 @@
 | 純 OSS 不提 Lode 也行 | 「Vein」獨立講得通，不依賴 Lode 才有意義 |
 
 **Why（投票過程見 [`naming.md`](naming.md)）：**
-- `ctx` 至少撞 3 個獨立 OSS 名字（context-hub / Vedantham / ActiveMemory）
+- 舊名（`ctx`）至少撞 3 個獨立 OSS 名字（context-hub / Vedantham / ActiveMemory）
 - 從 20 個候選收斂到 Top 3：vein / crux / etch
-- Rex 選 vein，理由：跟 Lode 同 brand family、未來可擴 Lode/Vein/Seam 系列、CLI 順
+- Rex 選 vein：跟 Lode 同 brand family、未來可擴 Lode/Vein/Seam 系列、CLI 順
 - vein 在 software namespace 不擁擠（mining 比喻少見）
-- Session 0.9 Rex 提 `lode-ctx` 替代案，但會 undo Path D 跳脫 ctx 紅海的核心目的；改採「Lode Vein」product family 框架滿足「強 Lode 關聯」需求而不犧牲跳脫**
 
-**Rejected：`lode-ctx` 為什麼不行（Session 0.9 review）：**
-- 「ctx」是被 7+ 個競品擠爆的紅海 namespace，加 `lode-` 前綴不會改變 SEO / 用戶分類
-- 用戶看到 `lode-ctx` 腦中分類「another ctx tool」→ 跟 context-hub 304⭐ 同框
-- Path D thesis 整個失效（我們不是 code RAG broker）
+**Rejected：`lode-ctx` / `lode-vein`（CLI 命令）為什麼不行：**
+- `lode-ctx`：「ctx」是紅海 namespace，加前綴不改變 SEO / 用戶分類；Path D thesis 失效
 - 連字號 CLI 命令痛（`lode-ctx log "..."` 每次手指要找橫線）
 - 暗示 sub-product feel，OSS standalone 故事弱
-
-**Rejected：`vein-ai` / `vein-cli`：**
-- `-ai` 是 2024 era cliché，會老化
-- `-cli` 暗示只有 CLI，將來加 MCP server 名字錯
 
 **Availability check（2026-05-26）：**
 - 🟢 npm `vein`：空
 - 🟢 GitHub `rex4ssd/vein`：可建
-- 🟡 PyPI `vein`：被 squat（Josh Breidinger 2025-06-26 上傳 placeholder package，內容只有 `vein.hello()` 1.6kB，無後續）
+- 🟡 PyPI `vein`：被 squat（placeholder package，無後續）
 - ❓ Domain `.dev` / `.app`：未測
 
 **Split naming 策略（避開 PyPI squat）：**
@@ -214,90 +224,61 @@
 | Homebrew | `vein`（透過 `rex4ssd/tap`） | self-tap 可控 |
 | Domain | `rexcode.app/vein` subdirectory | 主站 |
 
-理由：split naming 是業界常態（`python-dotenv` 安裝後叫 `dotenv`、`httpx[cli]` 安裝後叫 `httpx`），用戶體驗不痛。PyPI squat 透過 PEP 541 claim 太慢，不值得為它換掉 brand fit 最強的名字。
-
-**Architectural implications:**
-- 所有檔名 / config key / env var 從 `CTX_*` / `ctx.*` 改成 `VEIN_*` / `vein.*`
-- `.ctx/` folder convention 改 `.vein/`
-- repo 目錄要不要 rename 從 `/Users/lion/Documents/ctx/` 到 `/Users/lion/Documents/vein/` 待 Rex 決定
-
 **Future namespace 預留：**
 - **Lode** — desktop GUI / file viewer / compare（已存在）
 - **Vein** — decision lore archive CLI + MCP（本專案）
-- **Seam** — 預留（mining: 礦層 / 縫；可能 future 整合層）
-- **Shaft** — 預留（mining: 礦坑；可能 future 跨專案 / 跨機器 sync）
+- **Seam** — 預留（mining: 礦層 / 縫）
+- **Shaft** — 預留（mining: 礦坑）
 
 Phase 0 只做 Vein。Seam / Shaft 是 namespace 保留，沒實作計畫。
 
 **Revisit when:**
-- 確認 PyPI claim 有沒有機會（如果簡單就嘗試）
+- 確認 PyPI `vein` claim 有沒有機會
 - 確認 `.dev` / `.app` domain 有沒有撞
-- 出現另一個 mining-themed AI tool 強競品（不太可能）
 
 ---
 
-### D-006 — 採 Open Core 商業模式（ctx OSS + Lode 付費 + 未來 Cloud 訂閱）
+### D-008 — Visibility: private 現在，v0.3 flip public
 
 **Date:** 2026-05-26
 
-**Choice:** ctx CLI 100% MIT 開源、Lode 維持付費 GUI、ctx Cloud (v1.x+) 訂閱。Solo 功能完全不鎖。
+**Choice:** `rex4ssd/vein` 建為 **private repo**，達到以下三個條件後 flip 成 public：
 
-**Why:** 見 [`strategy.md`](strategy.md) 完整論述。摘要：
-- 個人功能不鎖 → 最大化 adoption funnel
-- 商業價值來自「協作 / 合規 / ops」不是「鎖功能」
-- Lode 整合是「不可替代附加值」，不是強制購買
+1. **三個核心命令真的能跑：** `vein init` + `vein log` + `vein recall`
+2. **Dogfood on Lode 至少 2 週：** 真實寫過 ≥ 10 條 decision/lore，retrieval 品質確認
+3. **README / docs_cloudflare 完整：** 陌生人 30 秒能看懂、5 分鐘能上手
 
-**Architectural constraints（Phase 0 就要做對的事）：**
-1. `config.yaml` 必有 `version:` field（未來 schema migration 用）
-2. `config.yaml` 預留 `team:` block（留空但保留 key 位置）
-3. chunks / digests 設計成「可逐筆獨立加密」（newline-delimited JSON、separate files）
-4. License 選 MIT（不選 AGPL/BUSL/SSPL，最大化 OSS adoption）
-5. **無 telemetry default**：連 phone-home / license check 都不裝
-6. ctx CLI **絕對不能對 Lode 有 hard dependency**：OSS 用戶完全不需碰 Lode 也能跑全功能
+預期觸發時程：Phase 0 完成後、Phase 0.3（MCP server）之前。
 
-**Trade-off accepted:**
-- MIT 允許 fork / 商業分支：可能未來有競品。我們的 moat 是「Rex 親自 dogfood 累積的工作流深度」 + Lode 整合，不是 license。
-- 「不鎖個人功能」= 部分 power user 永遠不付費。OK，他們是 adoption 的一部分。
+**Why（為什麼選 B 不選 A/C）：**
 
-**Rejected:**
-- AGPL：嚇跑企業 internal use，無謂的傷害 adoption
-- BUSL（HashiCorp 那種延遲開源）：信任成本高，社群討厭
-- 全閉源賣 license key：完全違反 OSS funnel 邏輯，跟 Lode 重疊
+| 路徑 | 採 / 拒 | 理由 |
+|---|---|---|
+| **A. Public from day 1** | ❌ 拒 | Spec 還在 churn；public 看見 churn 觀感差；無 working product 給人試 |
+| **B. Private now, v0.3 flip public** | ✅ 採 | 第一次接觸 Vein 的人看到 working product；spec breaking change 不受外部牽制；跟 Lode 私有 + public release 同 pattern |
+| **C. Public + Alpha tag** | ❌ 拒 | 「Alpha」標籤對多數人沒擋；早期 issue noise 大於收穫 |
+
+**參照 pattern：** Lode 自己也是 `rex4ssd/lode` private dev + `rex4ssd/lode-releases` public binaries 雙 repo。
+
+**Public 之前要做的事（pre-flip checklist）：**
+
+- [ ] `vein init` 能跑
+- [ ] `vein log decision/lore "..."` 能存進 `.vein/decisions/` 或 `.vein/debug_lore/`
+- [ ] `vein recall "<query>"` retrieval 跑得起來、品質可接受
+- [ ] Dogfood on Lode ≥ 2 週、≥ 10 條真實 entries
+- [ ] LICENSE 檔（MIT）
+- [ ] `docs_cloudflare/index.md` polish 完整
+- [ ] `docs_cloudflare/install.md` 真實可跑（不是 placeholder）
+- [ ] README.md（從 `docs_cloudflare/index.md` 精簡版）
+- [ ] CONTRIBUTING.md 雛形
+- [ ] `.github/ISSUE_TEMPLATE/` 雛形
+
+**Reserve `lodevein` GitHub org（順手做）：**
+保留 namespace 給未來 family 擴張。預防別人註冊變蹭名。
 
 **Revisit when:**
-- 出現大廠 fork 並提供 cloud 服務搶生意（不太可能；他們會自己做）
-- OSS 採用率 < 100 stars 且持平 6 個月（戰略要重新檢討）
-
-**⚠️ Caveat（2026-05-26 後加）：**
-D-006 寫的時候假設「沒人在做 ctx 這個 niche」。Session 0.6 web search 後發現至少 7 個直接競品在做 per-project AI context broker（見 [`competitive_landscape.md`](competitive_landscape.md)）。Open Core 模式本身仍然成立，但**「ctx 作為獨立 OSS adoption funnel」這個前提失效**。Path 選擇進 D-007（待決）。
-
----
-
-### D-005 — `.ctx/cache/` 進 .gitignore，`.ctx/config.yaml` 進 git
-
-**Date:** 2026-05-26
-
-**Choice:** 預設 `.gitignore`：
-
-```
-.ctx/cache/
-.ctx/index/embeddings.db
-.ctx/memory/
-```
-
-進 git：
-
-```
-.ctx/config.yaml
-.ctx/digests/
-.ctx/.gitignore        ← 自己
-```
-
-**Why:**
-- `config.yaml` 是 source of truth，要跟 code 一起 version
-- `digests/` 是人寫 / 半自動產的高價值產出（週報、topic digest），值得 commit
-- `cache/` / `embeddings.db` 是 derived view，重建成本可接受，不該膨脹 repo
-- `memory/sessions.jsonl` 含個人 query history，可能含敏感 keyword，預設不 commit
+- Lode dogfood Vein 一個月後，如果發現需要外部視角才能改進，可考慮提早 flip
+- 若有人宣布類似 "decision lore" product 搶 first-mover 名分，可考慮提早 flip 搶 mindshare
 
 ---
 
@@ -305,7 +286,7 @@ D-006 寫的時候假設「沒人在做 ctx 這個 niche」。Session 0.6 web se
 
 ### P-001 — placeholder：第一個踩到的雷請寫這裡
 
-ctx 還沒寫 code，雷區待累積。
+Vein 還沒寫 code，雷區待累積。
 
 預期會踩的：
 - ollama timeout / connection refused 怎麼降級
@@ -317,23 +298,23 @@ ctx 還沒寫 code，雷區待累積。
 
 ## Invariants（不可違反）
 
-### I-001 — `.ctx/cache/` 永遠不可進 git
+### I-001 — `.vein/cache/` 永遠不可進 git
 
 **Why:** cache 會變大（GB 級），含 query 結果可能有敏感 keyword。
 
-**How to enforce:** `.ctx/.gitignore` 預設寫好；validator 加 check：`git check-ignore .ctx/cache/foo.json` 必須 exit 0。
+**How to enforce:** `.vein/.gitignore` 預設寫好；validator 加 check：`git check-ignore .vein/cache/foo.json` 必須 exit 0。
 
 ---
 
 ### I-002 — ollama 失敗時必須明確報錯，不可 silent fallback
 
-**Why:** 如果 ollama 跑不起來，靜默 fallback 到 grep 會讓 user 以為 ctx 在用 local AI（其實沒），digest 品質爛還不知道為什麼。
+**Why:** 如果 ollama 跑不起來，靜默 fallback 到 grep 會讓 user 以為 vein 在用 local AI（其實沒），digest 品質爛還不知道為什麼。
 
 **How to enforce:** `OllamaError` raise to top；CLI 印明確「ollama 連不上 http://localhost:11434」+ 退出 code 2。
 
 ---
 
-### I-003 — `ctx ask` 輸出永遠不超過 config.ask.digest_budget_tokens
+### I-003 — `vein recall` 輸出永遠不超過 config.recall.digest_budget_tokens
 
 **Why:** spec G1（context 省 60%）的核心。如果 brief 自己就 5K token，意義盡失。
 
@@ -343,27 +324,27 @@ ctx 還沒寫 code，雷區待累積。
 
 ### I-004 — config.yaml schema 必須 version 化
 
-**Why:** 將來改 schema 不能讓舊 `.ctx/` 直接壞。
+**Why:** 將來改 schema 不能讓舊 `.vein/` 直接壞。
 
-**How to enforce:** `config.yaml` 必有 `version:` 欄；ctx 讀取時 check `version` 並走對應 migrator。
+**How to enforce:** `config.yaml` 必有 `version:` 欄；vein 讀取時 check `version` 並走對應 migrator。
 
 ---
 
-### I-005 — ctx CLI 不可對 Lode（或任何商業產品）有 hard dependency
+### I-005 — Vein CLI 不可對 Lode（或任何商業產品）有 hard dependency
 
 **Why:** Open Core 戰略（D-006）的信任基礎。OSS 用戶必須 100% 不需 Lode 也能跑全功能。
 
 **How to enforce:**
 - `pyproject.toml` 的 `dependencies` 不可出現 Lode-related package
-- 任何「Lode 整合」功能必須走 well-defined data format（讀 `.ctx/` 即可），不可走 RPC 進 Lode binary
-- validator 加 check：`ctx --help` 不可提到 Lode（避免「沒裝 Lode 看到推薦覺得被綁」）
-- 唯一允許的：`ctx --version` 末尾可有一行 marketing footer，可被 `--quiet` 關閉
+- 任何「Lode 整合」功能必須走 well-defined data format（讀 `.vein/` 即可），不可走 RPC 進 Lode binary
+- validator 加 check：`vein --help` 不可提到 Lode（避免「沒裝 Lode 看到推薦覺得被綁」）
+- 唯一允許的：`vein --version` 末尾可有一行 marketing footer，可被 `--quiet` 關閉
 
 ---
 
-### I-006 — ctx 永遠不可預設 telemetry / phone-home
+### I-006 — Vein 永遠不可預設 telemetry / phone-home
 
-**Why:** D-006 brand promise。一旦預設打開過一次，社群信任就回不去（Sentry / GitLab 都吃過虧）。
+**Why:** D-006 brand promise。一旦預設打開過一次，社群信任就回不去。
 
 **How to enforce:**
 - 任何 outbound HTTP 必須明確 user action 觸發
@@ -372,6 +353,681 @@ ctx 還沒寫 code，雷區待累積。
   1. CLI 明顯 prompt（不是 dialog 預設打勾）
   2. 開源 telemetry endpoint server 程式碼
   3. 文件清楚列出每個 event 內容
+
+---
+
+### D-009 — 語言策略：Python 現在，Go 評估觸發條件
+
+**Date:** 2026-05-27
+
+**Choice:** Phase 0 維持 Python 3.11+；Phase 1 依以下條件評估 Go rewrite。
+
+**Go 的優勢（對 CLI distribution 有意義）：**
+- Single binary：`brew install vein` 直接裝，不需要 Python 環境
+- 啟動時間：~5ms vs Python ~200ms（對 `vein recall` 這種熱路徑有感）
+- Cross-compile：`GOOS=linux GOARCH=amd64 go build` 一行，免 CI 矩陣
+- PyPI squat 問題自動消失（不走 PyPI）
+
+**Go 的代價：**
+- Rex 的 iteration 速度慢 3-5x（Go 比 Python 囉唆）
+- ollama / sqlite-vec / tiktoken 的 Python binding 成熟；Go 版薄，要自己包 HTTP + CGO
+- Phase 0 dogfood 優先，distribution 問題還不痛
+
+**觸發 Go rewrite 評估的條件（任一）：**
+1. `pip install lode-vein` 安裝摩擦讓外部用戶明顯抱怨
+2. `vein recall` 成為熱路徑，200ms startup 被感知（通常不太可能，ollama 才是瓶頸）
+3. Phase 1 打算做 binary release + Homebrew tap，distribution UX 比 iteration 速度更重要
+
+**橋接方案（Go rewrite 之前）：**
+- `uv tool install lode-vein`（uv 安裝體驗比 pip 好很多）
+- `pipx install lode-vein` 作為 fallback
+- API 設計在 Python 穩定後，Go rewrite 只是 re-implement，不是 re-design
+
+**Revisit when:** Phase 0 dogfood 完成、外部用戶 > 50 人時重新評估。
+
+---
+
+### D-010 — MCP server 是 platform independence 的關鍵，不只是功能
+
+**Date:** 2026-05-27
+
+**Context:** IDE-native memory（Cursor Memory、Windsurf Memory）是 Vein 的 platform risk。他們的結構性弱點：雲端依賴、vendor lock-in、付費門檻、單一 model 綁定。
+
+**Choice:** Phase 0.3 的 MCP server 不只是「方便整合」，而是核心戰略：讓 `.vein/` 成為任何 MCP-compatible tool 都能讀寫的 portable memory layer。
+
+**架構意圖：**
+
+```
+Cursor      ──┐
+Windsurf    ──┤── MCP ──→ vein serve ──→ .vein/ (你的 lore)
+Claude Code ──┤
+本機 ollama ──┘
+```
+
+不管用什麼 IDE、什麼 model，記憶住在 `.vein/`，跟 `.git/` 一樣是專案資產。換工具不丟記憶。
+
+**對 Cursor 的直接反擊：**
+- Cursor Memory：雲端、$40/month、綁 Cursor model 合約
+- Vein：local-first、$0（搭 ollama）、跑任何 model、`.vein/` 跟你走
+
+**Phase 0.3 之前要做對的事（避免 MCP 上線後要 breaking change）：**
+1. `.vein/` schema 的 `id` 欄位要穩定（MCP tool 用 id 查 lore）
+2. lore entry 要有 `tags:` 欄位（MCP client 用 tag 過濾）
+3. `vein serve` 的 protocol 直接對齊 MCP spec，不做自己的 RPC
+
+**Positioning narrative（給 docs_cloudflare/why.md）：**
+> "Cursor Memory costs $40/month and lives in their cloud.  
+> Vein costs $0, lives in your `.vein/`, and works with every tool you already use."
+
+**Revisit when:** MCP spec 有 breaking change，或 Cursor/Windsurf 宣布支援 local MCP server（那時反而是好事，代表生態認可）。
+
+---
+
+### D-011 — 大記憶 AI Server（百 GB unified memory）是 upgrade path，不是 existential threat
+
+**Date:** 2026-05-27
+
+**Context:** Mac Studio Ultra 192GB unified memory 已可跑 405B 模型；future local AI server 的 context window 可能達數百萬 token。「把整個 codebase 塞進 context」在兩三年內不是夢。這會讓 Vein 的 digest / compression 失去意義嗎？
+
+**結論：不會。原因是 raw data ≠ curated lore。**
+
+Git 有所有 commit history，但 decisions.md 還是存在 —— 因為 commit 記錄 *what changed*，Vein 記錄 *why we chose this over that*。Context 越大，AI 看得到的 noise 也越多；Vein 的 lore 是人工確認過的 signal，作為「優先載入的 anchor layer」價值不減，反而更高。
+
+**Tiered digest 架構（Phase 0 就要設計對）：**
+
+| 使用情境 | 推薦 budget | 對應指令 |
+|---|---|---|
+| Cloud LLM（Claude / GPT）省 token | ≤ 2K token | `vein recall "query"` |
+| 本機 13B（16GB RAM） | ≤ 32K token | `vein recall --budget 32k "query"` |
+| 本機 70B+（64GB+ RAM） | ≤ 200K token | `vein recall --budget 200k "query"` |
+| 本機 405B / 百萬 ctx | 不壓縮，全量 | `vein recall --raw "query"` |
+
+`config.yaml` 設計要支援 `recall.digest_budget` 可覆寫，不寫死 2K。
+
+**架構 invariant（Phase 0 就要做對）：**
+- `.vein/` 儲存格式永遠是完整 lore（不預先壓縮）
+- digest 是 **read-time** 的 view，不是 write-time 的損耗
+- 同一份 `.vein/` 可以在 3B 機器上出 2K digest，在 405B 機器上出全量
+
+**對 Printing Press 的互補關係：**
+Printing Press 給 AI 執行工具（muscle memory），Vein 給 AI 決策脈絡（long-term memory）。兩者合在一起是完整的 AI-assisted dev stack：知道怎麼做 + 記得為什麼這樣做。未來可以考慮 cross-reference：Vein lore 可以記「為什麼選某個 Printing Press CLI」。
+
+**Revisit when:** 本機 context window 超過 1M token 且成本接近 $0 時，重新評估 `--raw` 是否變成預設。
+
+---
+
+### D-012 — Web Clipper：lore entry schema 從 Phase 1 就要預留 source 欄位
+
+**Date:** 2026-05-27
+
+**Context:** 需求：在 Chrome 選取文字 → 透過 bookmarklet / Chrome Extension 存進 `.vein/` 作為 reference lore（「為什麼選這個 library」「這篇文章影響了 D-002」）。
+
+**Choice:** Phase 1 的 lore entry schema 就預留 `source_url` 和 `source_title`，不等 Phase 2 再加。
+
+**Why 現在就要做：**
+- schema 加欄位是 non-breaking change，但 migration 要寫；Phase 1 就對，省掉這個工
+- bookmarklet 是 Phase 2 功能，但 `vein serve` HTTP endpoint 的 payload 要接受這兩個欄位
+- 搜尋時「從哪個 URL 來的」是有用的 filter
+
+**Lore entry 完整 schema（Phase 1 目標）：**
+
+```yaml
+# .vein/decisions/20260527-143022.md frontmatter
+---
+id: 20260527-143022
+type: decision          # decision / lore / pitfall / reference
+title: "為什麼選 sqlite-vec"
+tags: [database, vector, local-first]
+date: 2026-05-27T14:30:22+08:00
+source: local           # local | bookmarklet | git-hook | mcp | template
+source_url: ""          # 網頁來源 URL（bookmarklet 填入）
+source_title: ""        # 網頁標題
+related: [D-002]        # 關聯的 decision id
+---
+```
+
+**Web clipper 實作路徑（複雜度遞增）：**
+
+| 方式 | 何時做 | 說明 |
+|---|---|---|
+| Bookmarklet | Phase 2（vein serve 之後） | `fetch('localhost:3747/log', ...)` |
+| `lode://` URL scheme | Lode v0.x（另案） | Lode app 處理，轉寫進 .vein/ |
+| Chrome Extension | Phase 3 之後 | 完整 UX，含右鍵選單 |
+
+**Bookmarklet 草稿（待 vein serve 完成後啟用）：**
+
+```javascript
+javascript:(function(){
+  var sel = window.getSelection().toString().trim();
+  if (!sel) { alert('請先選取文字'); return; }
+  fetch('http://localhost:3747/log', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      type: 'reference',
+      message: sel,
+      source_url: location.href,
+      source_title: document.title
+    })
+  }).then(r => r.json()).then(d => alert('✓ Saved: ' + d.id));
+})();
+```
+
+**Revisit when:** Chrome Extension 有需求（外部用戶反映 bookmarklet 不夠用）。
+
+---
+
+### D-013 — fubon_stock × Vein：獨立 `.vein/` + AI 下單 audit trail
+
+**Date:** 2026-05-27
+
+**Context:** fubon_stock（`/Users/lion/Documents/fubon_stock/`）計劃引入：台股歷史行情回測 + AI 自動下單。Vein 在這裡有兩個角色：策略設計決策記錄、AI 下單 audit trail。
+
+**Choice:**
+1. `fubon_stock` 建立獨立的 `.vein/`（不跟 Vein 專案 lore 混）
+2. AI 每次下單前後各呼叫一次 `vein log`，記錄推理過程
+
+**Why 獨立 `.vein/`：**
+- 股票策略的 lore 跟 Vein 開發的 lore 語意完全不同
+- 日後可能有人只用 fubon_stock 不用 Vein，lore 不應互相污染
+- `vein recall "RSI"` 在 fubon_stock context 下要找股票策略，不是 Vein 的 code 決策
+
+**AI 下單 audit trail 的結構：**
+
+```python
+# 下單前 — 記錄 AI 推理
+vein log decision \
+  "買進 2330 100 張 @ 920 — AI reasoning: RSI=27(oversold), \
+   三大法人連買 3 日共 5000 張, MACD golden cross D1; \
+   risk: stop_loss=-5% (@874), position=2% portfolio; \
+   strategy_version=v3.2"
+
+# 下單後 — 記錄執行結果
+vein log lore \
+  "2330 成交 @ 921（滑點 +1），時間 09:03:42; \
+   預期 vs 實際：開盤前預估 920，實際多 1 元（流動性正常）"
+
+# 平倉 / 停損時
+vein log lore \
+  "2330 平倉 @ 880 (-4.9%)，觸發 stop_loss; \
+   AI 推理在事後看：法人買超是假突破，主力出貨跡象 D+2 出現"
+```
+
+**Lore 分類建議（fubon_stock 專用 tag）：**
+
+| tag | 用途 |
+|---|---|
+| `strategy-design` | 為什麼選這個指標 / 參數 |
+| `backtest-result` | 回測數據記錄 |
+| `trade-entry` | AI 下單推理 |
+| `trade-exit` | 平倉 / 停損原因 |
+| `api-pitfall` | Fubon Neo API 雷區 |
+| `market-observation` | 市場行為觀察（非策略，純觀察）|
+
+**`vein recall` 在股票 debug 的威力：**
+
+```bash
+# 事後 debug：「AI 昨天為什麼買 2330？」
+vein recall "2330 trade entry 2026-05-28"
+→ 立刻看到當時的 RSI / 法人數據 + AI 推理全文
+
+# 策略迭代：「v2 跟 v3 的差異是什麼？」
+vein recall "strategy v2 v3 comparison"
+→ 看到當初版本升級的 trade-off 記錄
+```
+
+**風險管理前提（不是 Vein 的功能，但要 Vein 記錄）：**
+1. 先 paper trading ≥ 3 個月，Vein 記錄每筆虛擬交易的 AI 推理
+2. 真實下單前，`vein recall "paper trading lessons"` 確認有沒有系統性問題
+3. 每日損益超過 -2% → 自動暫停，`vein log pitfall` 記錄當天市況
+
+**Architectural constraint：**
+- `fubon_stock` 的 `vein log` 呼叫要用 `--project /Users/lion/Documents/fubon_stock` flag 指定專案路徑
+- 或在 `fubon_stock/` 目錄下執行（vein 自動找最近的 `.vein/`，類似 git 的 root detection）
+
+**Revisit when:** AI 下單策略穩定後，考慮把 audit trail 做成 structured JSON 而非 markdown prose，方便程式化分析交易決策品質。
+
+---
+
+### D-014 — `vein brief`：新 session / 小問題的 grep waste 解法
+
+**Date:** 2026-05-27
+
+**Context:** 每次開新對話視窗，或問大專案裡的小問題，Claude 的第一反應是：
+grep × 5~10 + read × 3~5 → 才弄清楚背景 → 才開始真正工作。
+這些「定向成本」浪費 ~5-15K token，而且每次 session 都重來。
+
+**根本原因：** Claude 沒有關於這個專案的 pre-computed orientation，每次從零開始探索。
+
+**Choice:** 新增 `vein brief` 指令，輸出一份 ~800 token 的 orientation digest，
+覆蓋 90% 的「我是誰、現在在哪、有哪些雷」定向問題。
+
+**`vein brief` 的輸出結構：**
+
+```markdown
+# Project Brief — {project_name} (generated {timestamp})
+
+## What is this project?
+{1-2 句 from config.yaml description}
+Current phase: {from .vein/config.yaml}
+
+## Key Architecture Decisions (top 5 by recency + relevance)
+- D-XXX: {title} — {1 句 rationale}
+- ...
+
+## Active Pitfalls (unresolved P-xxx)
+- P-XXX: {title} — {1 句 how to avoid}
+
+## Recent Lore (last 7 days)
+- {date}: {lore title}
+
+## Current TODO / Phase Status
+{from config.yaml or .vein/STATUS.md}
+```
+
+**`vein brief` 的實作：**
+- 不做 embedding search（不需要，是 full-scan of recent + pinned lore）
+- 用 `llama3.2:3b` 把 raw lore list 壓成 brief（速度快）
+- 結果 cache 進 `.vein/BRIEF.md`，TTL = 1 小時或有新 `vein log` 就失效
+- 可帶 `--regen` 強制重新生成
+
+**`vein ask`：小問題的 grep 替代品**
+
+比 `vein recall` 更口語化，專門對應「我想知道為什麼 X 是這樣」類問題：
+
+```bash
+# 代替 Claude 自己 grep + read 多個檔
+vein ask "為什麼 DualTree 用 virtual scroll？"
+→ 立刻從 .vein/ 找到 D-015，輸出 rationale
+
+vein ask "ResizeObserver 在哪裡用？為什麼？"
+→ D-018 + 相關 pitfall
+
+vein ask "有沒有跟 sqlite 相關的雷？"
+→ P-004, P-007 的摘要
+```
+
+內部是 `vein recall` 加上問答 prompt，差別在輸出格式更像回答問題而非 digest。
+
+**Session SOP 更新（with vein brief）：**
+
+```
+新 session 開始（任何大小的問題）
+    │
+    ▼
+  vein brief              ← 一次，得到 orientation（~800 token）
+    │
+    ▼
+  task scope 確認
+    │
+    ├─ 簡單問題 ──► vein ask "<question>"  → 直接回答，0 grep
+    │
+    └─ 複雜工作 ──► vein recall "<scope>"  → task digest → 開始工作
+                          │
+                          ▼
+                     只在 vein 找不到答案時才 grep/read
+```
+
+**小問題的 virtuous cycle：**
+
+```
+vein ask "X 為什麼這樣？"
+    │
+    ├─ .vein/ 有答案 → 直接給，0 grep ✓
+    │
+    └─ .vein/ 沒有答案
+           │
+           ▼
+        Claude grep/read 找答案
+           │
+           ▼
+        vein log lore "X 為什麼這樣：因為..." ← 記進去
+           │
+           ▼
+        下次同類問題 → vein ask 直接回答 ✓
+
+每個被問過的問題，自動讓 .vein/ 更完整
+```
+
+**`.vein/BRIEF.md` 的 git 策略：**
+- 進 `.gitignore`（generated file，不 commit）
+- 每台機器 / 每個 session 各自 generate
+- 原始 lore entries 才是 git-tracked 的 source of truth
+
+**對 CLAUDE.md 的影響：**
+- CLAUDE.md §6 SOP 第一步改為：先跑 `vein brief`，再讀 CLAUDE.md（brief 更精準）
+- 長期目標：CLAUDE.md 只剩 30 行 meta-index，orientation 全部靠 `vein brief`
+
+**Revisit when:**
+- brief 品質不夠好（llama3.2:3b 壓縮後資訊失真）→ 換 qwen2.5-coder:7b
+- brief 生成太慢（> 5 秒）→ 考慮純 rule-based 生成，不過 LLM
+
+---
+
+### D-015 — Model backend 抽象化：支援 ollama + Rapid-MLX（及未來其他 backend）
+
+**Date:** 2026-05-27
+
+**Context:** Rapid-MLX（Apple Silicon 原生推論）比 ollama 快 4.2x，API 格式與 ollama 相容。
+若 Phase 1 把 model backend hardcode 成 ollama，之後要支援 Rapid-MLX 就要改很多地方。
+
+**Choice:** Phase 1 就把 model backend 抽象成 config，不 hardcode。
+
+**config.yaml 設計：**
+
+```yaml
+version: 1
+model:
+  backend: ollama            # ollama | rapid-mlx | （未來：lmstudio、jan）
+  base_url: http://localhost:11434
+  embed_model: nomic-embed-text
+  digest_model: llama3.2:3b
+  polish_model: qwen2.5-coder:7b
+  analyze_model: deepseek-r1:14b
+```
+
+切換到 Rapid-MLX 只需改 `backend` 和 `base_url`，其他不動。
+
+**為什麼 Rapid-MLX 值得支援：**
+- `vein brief` 從 ~5-8 秒 → ~1-2 秒
+- `vein ask` 從「有等待感」→「秒回」
+- `vein log` polish 從 ~3-5 秒 → < 1 秒
+- 整體 UX 跳一個 tier
+
+**Trade-off：**
+- Rapid-MLX 不是所有 Mac 都能裝（需要 Apple Silicon + macOS 13+）
+- ollama 是目前更廣泛支援的選項，保持為預設
+- Linux / Windows 用戶繼續用 ollama
+
+**Architectural invariant（Phase 1 就要做對）：**
+- 所有 ollama HTTP call 必須透過 `ModelBackend` abstraction class，不可直接 `requests.post("http://localhost:11434/...")`
+- backend 切換是 config change，不是 code change
+
+**Revisit when：** Rapid-MLX API 與 ollama 有 breaking 差異（目前相容）。
+
+---
+
+### D-016 — `vein import` 子命令：用 MarkItDown 擴大 lore capture 來源
+
+**Date:** 2026-05-27
+
+**Context:** Microsoft 開源的 MarkItDown（`pip install markitdown`）可把 PDF / Word / Excel / PPT / HTML / 圖片全轉成 Markdown。
+目前 `vein log` 只接受手動文字輸入，無法從文件、會議紀錄、規格書捕捉 lore。
+
+**Choice:** Phase 2 新增 `vein import` 子命令，底層用 MarkItDown 作為文件解析層。
+
+**命令設計：**
+
+```bash
+# 從檔案捕捉 lore
+vein import --from-file spec.pdf
+vein import --from-file meeting_notes.docx
+vein import --from-file design_decision.xlsx
+
+# 從逐字稿捕捉 lore（配合 jt-live-whisper 等轉錄工具）
+vein import --from-transcript meeting_2026-05-27.txt
+```
+
+**內部流程：**
+```
+input file
+    │
+    ▼
+markitdown → markdown string
+    │
+    ▼
+ollama（qwen2.5-coder:7b）：
+  "這份文件裡有哪些 trade-off 選擇或架構決策？
+   列出候選 lore entries（每條一句話）"
+    │
+    ▼
+Rex 確認哪些要記 → vein log 批量存入
+```
+
+**為什麼這個功能重要：**
+很多 decision 不是在寫 code 時產生的，而是在讀規格書、開 PRD 會議、查技術文章時產生的。
+MarkItDown 讓 Vein 從「只捕捉 code-time decision」升級為「捕捉任何來源的 decision」。
+
+**Dependencies：**
+- `markitdown` 加入 `pyproject.toml` optional dependencies（`pip install lode-vein[import]`）
+- 不強制依賴，`vein import` 若未安裝 markitdown 給出明確提示
+
+**Revisit when：** MarkItDown 對某些檔型轉換品質不佳（例如複雜 PDF 表格），考慮加入 pymupdf 作為 PDF fallback。
+
+---
+
+### D-017 — `vein import --from-doxygen`：從 Doxygen XML 批量 capture lore
+
+**Date:** 2026-05-27
+
+**Context:** IC FW 大型專案通常已有 Doxygen 文件。Doxygen XML 包含 `@pre`（前置條件）、`@post`（後置條件）、`@note`（行為備忘）、`@warning`（已知危險），這些都是 architectural invariant 和 pitfall 的天然來源，但沒有工具把它們轉成可搜尋的 decision lore。
+
+**Choice:** Phase 2 在 `vein import` 下新增 `--from-doxygen` 模式，parse Doxygen XML → 批量生成 lore candidates → 工程師確認後寫入 `.vein/`。
+
+**命令設計：**
+
+```bash
+# 從單一 header 的 Doxygen XML 批量 import
+vein import --from-doxygen hal/doxygen/xml/hal__dma_8h.xml
+
+# 從整個 module
+vein import --from-doxygen hal/doxygen/xml/ --tag hal
+
+# dry-run：只列出 candidates，不寫入
+vein import --from-doxygen hal/doxygen/xml/ --dry-run
+```
+
+**內部流程：**
+
+```
+Doxygen XML
+    │
+    │  parse @pre @post @note @warning
+    ▼
+候選清單（raw text）
+    │
+    │  ollama (qwen2.5-coder:7b)：
+    │  "判斷每條是 decision / lore / pitfall，給出 1 句 title"
+    ▼
+互動式確認列表（y/n/edit 每條）
+    │
+    ▼
+批量 vein log → .vein/
+```
+
+**為什麼需要這個功能：**
+- 存量 Doxygen 文件一次 import，瞬間讓新建的 `.vein/` 有 lore 基礎
+- 不需要從零開始 capture；FW 工程師已有的 `@note` 習慣可以直接轉換
+- 特別適合：新專案接手、工程師離職前 lore 搶救
+
+**Doxygen tag 對應 Vein type：**
+
+| Doxygen tag | Vein type | 說明 |
+|---|---|---|
+| `@pre` / `@post` | `decision` | Architectural invariant，API 使用規則 |
+| `@note` | `lore` | 行為備忘，值得記錄但非 pitfall |
+| `@warning` | `pitfall` | 已知危險，直接對應 pitfall |
+| `@deprecated` | `pitfall` | 舊路徑警示 |
+
+**Dependencies：**
+- Python `xml.etree.ElementTree`（stdlib，不需額外依賴）
+- `vein import` 基礎框架（D-016 的 MarkItDown 整合完成後）
+- ollama with `qwen2.5-coder:7b`（D-015 的 model backend 抽象）
+
+**Trade-off（vs 純手動 capture）：**
+- 自動化：降低 capture 摩擦，但品質不如手寫（有些 `@note` 是實作細節，不是 lore）
+- 解法：`--dry-run` + 互動確認讓工程師 filter，不是全自動 commit
+
+**Revisit when：** Doxygen XML schema 跨版本不穩定（rare），或工程師不寫 Doxygen（考慮改 parse inline comment）。
+
+---
+
+### D-018 — Cross-environment lore：SystemC 假設不等於 MP 行為
+
+**Date:** 2026-05-27
+
+**Context:** IC FW 開發用 QEMU + SystemC co-simulation 做 pre-silicon 驗證，但 SystemC model 永遠是近似值（TLM，非 cycle-accurate）。Pre-silicon 通過的 FW，post-silicon 可能因 timing 差異失敗。這種「跨環境行為差異」是 FW 開發中最高價值的 lore，也最容易在人員流動時流失。
+
+**Choice:** 在 `.vein/` lore schema 中明確支援 `cross_env` tag 和 `env_delta` 結構化欄位，讓 SystemC ↔ ASIC 的差異可被精確搜尋。
+
+**Lore entry 格式（SystemC vs MP delta）：**
+
+```yaml
+---
+id: 20260527-170000
+type: pitfall
+title: "SystemC DMA completion latency ≠ real ASIC"
+tags: [dma, timing, systemc-vs-mp, cross-env]
+date: 2026-05-27T17:00:00+08:00
+env_delta:
+  systemc: "固定 100ns（TLM model 限制）"
+  real_asic: "50~300ns depending on NAND state"
+  affected_paths: [hal_dma_submit, gc_trigger_wait]
+related: [D-017]
+---
+
+FW 的 DMA timeout 不能照 SystemC 數字設定。
+SystemC model 的 DMA latency 是常數（TLM abstraction），
+真實 ASIC 因 NAND state、thermal、wear-leveling 影響，
+最壞情況可達 SystemC 的 3x。
+
+Timeout 設定必須以真實 silicon 最壞情況（300ns + 20% margin）為準。
+已知受影響：hal_dma_submit timeout, gc_trigger_wait timeout。
+```
+
+**`vein recall` 的威力（跨環境查詢）：**
+
+```bash
+# 所有 SystemC 跟 real silicon 的已知差異
+vein recall "systemc vs mp delta"
+
+# DMA 相關的跨環境問題
+vein recall "dma cross env"
+
+# 新的 pre-silicon → post-silicon 驗證
+vein recall "timing delta"
+→ 馬上知道哪些 path 在 post-silicon 要特別注意
+```
+
+**為什麼需要專門的結構：**
+1. 這類 lore 有獨特的時效性：pre-silicon 建立，post-silicon 驗證（可能推翻或補充）
+2. 需要雙向查詢：「這個 API 在 SystemC 下有哪些已知限制？」以及「這個 ASIC 行為有 SystemC 對應的 lore 嗎？」
+3. `env_delta` 欄位讓 lore 的準確性更高（不只是「有差異」，而是「差多少、影響哪裡」）
+
+**對 `vein log` 的影響：**
+- Phase 1 先用 tag（`systemc-vs-mp`）搜尋
+- Phase 2 若 IC FW use case 成為重點，才把 `env_delta` 加入 schema
+- 不在 Phase 0 做（先有 generic lore 比 specialized schema 更重要）
+
+**推廣方向（IC FW 以外）：**
+- 同樣的「跨環境行為差異」在其他領域也存在：dev/staging/prod 行為不同、ARM vs x86 差異、CPU architecture 差異
+- `env_delta` 是 generic pattern，不只是 IC FW 專用
+
+**Revisit when:** FW use case 真實 dogfood（有人把 Vein 用在真實 IC 專案）之後，根據實際使用回饋調整 schema。
+
+---
+
+### D-019 — Vein vs 原生 AI memory（claude-pers-mcp 等）：兩層不競爭
+
+**Date:** 2026-05-27
+
+**Context:** Claude Code 有內建 memory（`~/.claude/memory/`），各 IDE 也有類似的 memory MCP。有人會問：「有了原生 AI memory，Vein 還有什麼用？」
+
+**Choice:** 兩者解不同層的問題，正確姿勢是同時用。
+
+**根本差異：**
+
+```
+原生 AI memory (claude-pers-mcp 等)  →  "Rex 這個人是誰？"
+Vein (.vein/)                        →  "這個專案為什麼長這樣？"
+```
+
+| 維度 | 原生 AI memory | Vein |
+|---|---|---|
+| Scope | 全局，跟著 user | Per-project，跟著 repo |
+| 儲存位置 | `~/.claude/memory/`（本機） | `.vein/`（repo 內） |
+| Git-tracked | 否 | 是 |
+| 多 AI 工具可用 | 否（Claude 獨有） | 是（plain markdown，任何工具） |
+| 主要內容 | User 偏好、跨專案習慣 | 決策 rationale、pitfall、lore |
+| 寫入方式 | Claude 自動判斷要記什麼 | 工程師刻意 `vein log` |
+| Pitfall + chaos seed | 不支援 | 一等公民 |
+| 可共享給隊友 | 否 | 是（git clone 帶走全部 lore） |
+
+**什麼情況原生 memory 更好：**
+- 跨專案的個人偏好（"Rex 喜歡 terse 回答"）
+- 自動 capture，不需要工程師刻意操作
+- 單人 solo workflow，不需要 team sharing
+
+**什麼情況 Vein 更好：**
+- 「為什麼這個 API 長這樣」類的專案決策
+- 多人團隊，lore 要 share
+- 換 AI 工具（從 Claude Code 換 Cursor）不丟記憶
+- IC FW / 複雜系統，pitfall 有 reproduction steps
+- 工程師離職，lore 不隨人走
+
+**Vein 的真實弱點（相對原生 memory）：**
+- 需要手動 `vein log`，原生 memory 是全自動
+- Phase 2 git hook / Phase 3 MCP write-back 之前，capture 紀律依靠人
+
+**Revisit when:** 若未來 Claude Code 支援 per-project memory（住在 `.claude/` 之類），重新評估定位。目前（2026-05-27）原生 memory 仍是 user-global，無 project scope。
+
+---
+
+### D-020 — AI provider config 與 command system 設計
+
+**Date:** 2026-05-27
+
+**Context:** Vein 需要三個 config/tooling 層：
+1. AI provider 設定（Claude/Gemini/OpenAI/local ollama 的 model 選擇、routing）
+2. 開發指令快速選單（類 cmd_entry.csv 模式）
+3. Folder-based sequential batch runner（有 log，fail 即 break）
+
+**Choice & 檔案配置：**
+
+```
+vein/
+  config/
+    ai_providers.yaml    ← model names, endpoints, routing, budget tiers（committed）
+  .env                   ← API keys（gitignored）
+  .env.example           ← key template（committed）
+  cmd/
+    cmd_vein_entry.csv   ← 開發指令清單（同 py/ 的 cmd_entry.csv 格式）
+    cmd_vein_entry.py    ← standalone runner（不依賴 py/ 的 cmd_entry_core）
+    run_batch.py         ← folder runner with full .log
+    batch/
+      01_lint.sh
+      02_test.sh
+      03_validate_docs.py
+    logs/                ← gitignored，run_YYYYMMDD_HHMMSS.log + run_latest.log symlink
+```
+
+**ai_providers.yaml 的關鍵設計：**
+- `local` block：ollama / rapid-mlx，Phase 0 primary backend
+- `claude` / `gemini` / `openai` block：`enabled: false` 預設，按需開
+- `routing` block：每個 task role（embed / digest / polish / analyze / ask / review）指定 provider 優先序
+- `budget` block：2k / 32k / 200k / raw 四個 tier，對應 D-011 的 tiered digest 設計
+- 非敏感設定全在 yaml；API key 只在 .env
+
+**run_batch.py 的關鍵設計：**
+- 掃 folder → natural sort（01_xxx 先於 02_xxx，10 不早於 09）
+- 支援 `.sh`（bash）+ `.py`（sys.executable）
+- 每 step 完整 capture stdout/stderr 進 log（DEBUG level）
+- fail 預設 break；`--no-break` 繼續但記 warning
+- log 路徑：`<folder>/logs/run_YYYYMMDD_HHMMSS.log` + `run_latest.log` symlink
+- 環境變數注入：`VEIN_BATCH=1`、`VEIN_PROJECT_ROOT`
+- exit code：0=all OK，1=failure，2=bad args
+
+**cmd_vein_entry.py vs py/ cmd_entry_core 的差異：**
+- 不 import py/ 的 cmd_entry_core（vein self-contained）
+- 不寫 schedule_history.csv（vein 沒有 task_runner 依賴）
+- 簡化但保留同樣的 CSV format、shell: prefix、$var 展開
+
+**Routing 策略（Phase 0）：**
+- embed / digest / polish / analyze → 全部 local（不花錢）
+- ask → local first，fallback cloud
+- review → cloud first（重推理任務）
+
+**Revisit when：** Phase 1 開始用 cloud API 做 `vein review` 時，補上 rate limiting / cost tracking。
 
 ---
 

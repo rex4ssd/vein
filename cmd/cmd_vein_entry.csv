@@ -1,0 +1,41 @@
+# =============================================================================
+# cmd_vein_entry.csv — vein 專案開發指令清單，與 cmd_vein_entry.py 搭配
+# 欄位：cmd, cmd_queue, desc
+# cmd 以 shell: 開頭時，冒號後整段以 bash -lc 在本檔所在目錄（cmd/）執行
+# cmd_queue：主指令成功後依序執行（分號分隔），任一失敗中斷該鏈
+# =============================================================================
+cmd,cmd_queue,desc
+
+# workdir=/Users/lion/Documents/vein
+
+# ----- 開發環境 -----
+shell:cd $workdir && uv sync,,【env】uv sync — 更新 .venv（pyproject.toml）
+shell:cd $workdir && source .venv/bin/activate && pip list | grep -E "click|sqlite|yaml|dotenv",,【env】確認核心套件已裝
+shell:cd $workdir && cat config/ai_providers.yaml | grep -E "backend|base_url|enabled",,【env】顯示目前 AI provider 設定
+shell:cd $workdir && ollama list,,【env】列出本機 ollama 可用 model
+
+# ----- 品質 -----
+shell:cd $workdir && ruff check src/,,【lint】ruff check src/
+shell:cd $workdir && ruff check src/ --fix,,【lint】ruff check --fix
+shell:cd $workdir && pytest -q,,【test】pytest -q
+shell:cd $workdir && pytest -q --tb=short 2>&1 | tail -20,,【test】pytest 只看尾部 20 行
+
+# ----- vein CLI（開發中 / dogfood） -----
+shell:cd $workdir && python -m vein status,,【vein】vein status — 顯示 .vein/ 統計
+shell:cd $workdir && python -m vein brief,,【vein】vein brief — 生成 orientation digest
+shell:cd $workdir && python -m vein brief --regen,,【vein】vein brief --regen — 強制重新生成
+shell:cd $workdir && python -m vein recall "Phase 0 scope",,【vein】vein recall 測試查詢
+
+# ----- batch runner -----
+shell:cd $workdir && python cmd/run_batch.py cmd/batch/,,【batch】執行 cmd/batch/ 所有腳本（依序，fail 即 break）
+shell:cd $workdir && python cmd/run_batch.py cmd/batch/ --dry-run,,【batch】dry-run：只列出不執行
+
+# ----- git -----
+shell:cd $workdir && rm -f .git/index.lock && git add -A && git status,,【git】git add -A + status
+shell:cd $workdir && rm -f .git/index.lock && git add -A && git diff --cached --stat,,【git】git diff --cached --stat（確認要 commit 的內容）
+shell:cd $workdir && git log --oneline -10,,【git】git log 最近 10 筆
+
+# ----- 文件 -----
+shell:cd $workdir && wc -l docs/*.md docs_cloudflare/*.md,,【docs】各 .md 行數
+shell:cd $workdir && grep -n "^###" docs/decisions.md | tail -20,,【docs】decisions.md 最後 20 個決策標題
+shell:cd $workdir && python -c "import yaml; d=yaml.safe_load(open('config/ai_providers.yaml')); print('providers:', list(d.keys()))",,【docs】驗證 ai_providers.yaml 語法

@@ -1,0 +1,28 @@
+# Vein — .gitignore
+
+# ── secrets ──────────────────────────────────────────────────
+.env
+
+# ── generated / cache ────────────────────────────────────────
+.vein/index/
+.vein/cache/
+.vein/BRIEF.md
+
+# ── batch run logs ───────────────────────────────────────────
+cmd/logs/
+cmd/batch/logs/
+*.log
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+build/
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+
+# ── macOS ────────────────────────────────────────────────────
+.DS_Store

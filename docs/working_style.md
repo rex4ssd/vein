@@ -1,6 +1,6 @@
 # Working Style — Rex × Claude
 
-> 這份檔給「未來接手 ctx 的 Claude」看。萃取自 Lode 一年合作累積的工作模式 + Rex 個人偏好。
+> 這份檔給「未來接手 Vein 的 Claude」看。萃取自 Lode 一年合作累積的工作模式 + Rex 個人偏好。
 > CLAUDE.md §4 是精簡版，本檔是完整版。
 > 每次跟 Rex 開新 session，**先讀本檔，再開始做事**。
 
@@ -25,7 +25,7 @@
 
 - **繁體中文為主**
 - **技術詞保持英文**：commit / context / payload / digest / chunk / embedding / MCP / agent / debounce / mmap / Tauri / Rust / Python 等不翻譯
-- 中英混排，英文詞前後**不留空格**（中文排版習慣）：「per-turn payload 太大」不是「per-turn payload 太大」
+- 中英混排，英文詞前後**不留空格**（中文排版習慣）：「per-turn payload 太大」
 
 ### 2.2 結構
 
@@ -69,20 +69,16 @@ commit message 由 Claude 從當前 session diff + 上下文自己擬。格式�
 
 - bullet 1
 - bullet 2
-
-session-XX
 ```
 
 ### 3.2 `index.lock` workaround
 
-Lode 因為 fuse mount 偶爾留 `.git/index.lock`。SOP：
+偶爾留 `.git/index.lock`。SOP：
 
 ```bash
 rm -f .git/index.lock
 git add -A && git commit -F -
 ```
-
-ctx 專案放在 `/Users/lion/Documents/ctx/`，不是 fuse mount，理論上不會有這問題。但 SOP 保留以防萬一。
 
 ### 3.3 不 push
 
@@ -99,7 +95,7 @@ ctx 專案放在 `/Users/lion/Documents/ctx/`，不是 fuse mount，理論上不
 正解：寫成 `.sh`，告訴 Rex「跑 `bash /path/to/foo.sh`，output 貼回給我」。
 
 ```bash
-# 範例：bash /Users/lion/Documents/ctx/scripts/check_env.sh
+# 範例：bash /Users/lion/Documents/vein/scripts/check_env.sh
 #!/usr/bin/env bash
 set -euo pipefail
 echo "=== ollama ==="
@@ -120,7 +116,7 @@ python3 /Users/lion/Documents/py/cmd_entry.py 23
 
 數字對應 `cmd_entry.csv` 裡某條工作流（build Lode、跑 release 等）。
 
-ctx 之後可能也建一個 `ctx/scripts/cmd_entry.py`（或直接擴充 py 那邊的），把常用工作流數字化。
+Vein 之後可能也建一個 `vein/scripts/cmd_entry.py`（或直接擴充 py 那邊的），把常用工作流數字化。
 
 ### 4.3 Sandbox 跑不了的東西
 
@@ -156,7 +152,7 @@ Rex 開發習慣：**任何 trade-off 選擇都要 record**。
 
 Rex 三個月後 / 六個月後接手會忘記 90%。Claude 每次新 session 也是空白。decisions.md 是兩者的長期記憶。
 
-Lode 的 `docs/decisions.md` 已經救過 N 次同樣的 bug 重來。ctx 從 day 1 就要養這個習慣。
+Lode 的 `docs/decisions.md` 已經救過 N 次同樣的 bug 重來。Vein 從 day 1 就要養這個習慣。
 
 ---
 
@@ -180,7 +176,7 @@ Lode 的 `docs/decisions.md` 已經救過 N 次同樣的 bug 重來。ctx 從 da
 **Next:** 下一個 session 的 entry point
 ```
 
-ctx 本身會用自己的 `ctx ask` 來摘要 changelog，所以 changelog 寫好 = 自己以後查得到。
+Vein 本身會用自己的 `vein recall` 來摘要 changelog，所以 changelog 寫好 = 自己以後查得到。
 
 ---
 
@@ -193,10 +189,10 @@ python3 scripts/validate_lode.py
 # expected: 228 passed / 0 failed
 ```
 
-ctx 也要建類似的，從第一天開始：
-- `ctx/scripts/validate_ctx.py`
+Vein 也要建類似的，從第一天開始：
+- `vein/scripts/validate_vein.py`
 - 跑 ruff / mypy / pytest + 自訂 architectural invariant
-- 例：「`.ctx/cache/` 不可進 git index」「`config.yaml` schema 合法」「`src/ctx/` 不可 import `requests`（要用 httpx）」
+- 例：「`.vein/cache/` 不可進 git index」「`config.yaml` schema 合法」「`src/vein/` 不可 import `requests`（要用 httpx）」
 
 **核心精神：** 任何「曾經壞過、不要再壞」的 invariant 寫成 validator test，validator 通過 = ship。
 
@@ -213,7 +209,7 @@ ctx 也要建類似的，從第一天開始：
 | **明確 > 推測** | savingRef 必須 imperative，不走 useEffect 自動 |
 | **記下來 > 記在腦** | decisions.md / changelog.md / memory 系統 |
 | **跑得起來 > 漂亮架構** | release 工具 Python script 而非 Rust 重寫 |
-| **dogfood > 想像** | Lode 自己每天用；ctx 也要 dogfood on Lode |
+| **dogfood > 想像** | Lode 自己每天用；Vein 也要 dogfood on Lode |
 | **No game** | 要做就做最好的，不做就不做 |
 
 ---
@@ -256,7 +252,7 @@ ctx 也要建類似的，從第一天開始：
 
 ## 10. 開新 session 的 SOP（給未來的 Claude）
 
-每次 Rex 找你做 ctx 的事，順序：
+每次 Rex 找你做 Vein 的事，順序：
 
 1. 讀 `CLAUDE.md`（你已經有 hint，但快速重讀確認）
 2. 讀本檔（working_style.md）— 確認沒走偏 style

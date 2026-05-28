@@ -1,0 +1,26 @@
+# Vein — Claude Code context 排除清單
+# 這些檔案不會被 Claude Code 自動載入進 context
+# 需要時用明確的 Read / grep 按需讀取
+
+# 長篇歷史 / 參考文件（按需讀，不預載）
+docs/competitive_landscape.md
+docs/naming.md
+docs/changelog.md
+
+# Vein runtime 產物
+.vein/index/
+.vein/cache/
+.vein/memory/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+build/
+*.egg-info/
+
+# 雜項
+.DS_Store
+*.log
