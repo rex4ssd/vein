@@ -1145,6 +1145,80 @@ shell/sunnywalker/         ← 每個 step 的 script templates
 
 ---
 
+### D-023 — SunnyWalker `orchestrator/` 與 `vein walk` 是同一件事的兩個成熟度；不另造 agent
+
+**Date:** 2026-05-29
+
+**問題：** Rex 想打造「未來高效創建 app」的框架，建立/驗證/失敗/除錯流程要能跨專案復用（下一個可能是 SunnyFly app），問 Vein 能否做到、或需不需要再造新 agent。
+
+**現況盤點：**
+- SunnyWalker 專案（`/Users/lion/Documents/SunnyWalker/`）已有可跑的 `orchestrator/`（claude_loop）：4-agent ring（A Coder → B Validator → C Reporter → D Reviewer）、append-only ring 檔當 baton、`MAIN_ENTRY.md` resume manifest、heartbeat crash recovery、daily report、auto-archive，並附 `REUSE.md`（複製資料夾 + 改 `config.yaml` / `validate.sh` / spec 即可換專案）。
+- Vein 這邊 [D-022](#) 已設計 `vein walk`（sunnywalker runner）+ `.vein/` 當 shared memory。
+
+**結論（thesis）：兩者是同一概念的兩個成熟度，不是兩個系統。**
+- SunnyWalker 的 `orchestrator/` = `vein walk` 的**獨立原型**（standalone、已驗證可跑、但記憶綁在 per-project 的 ring 檔 + daily log，archive 後跨不了專案）。
+- `vein walk`（D-022）= **一般化版本**，把 shared memory 從 ring 檔換成 `.vein/`，因此 lore 能跨專案 recall。
+
+**回答 Rex 的兩個問題：**
+1. **不需要再造新 agent。** 「框架」= loop 引擎 + 記憶層兩塊：loop = `vein walk`（原型已存在於 SunnyWalker/orchestrator），記憶 = `.vein/`。Vein 不是 agent，是掛在現有 A/D agent 上的記憶 tool（A 開工 `vein recall` 注入 digest、D 收工 `vein log` 抽 decision/lore）。
+2. **流程復用 ≠ 經驗復用。** orchestrator 已解決「流程復用」（換專案重跑同一條 ring）。Vein 補的是「經驗復用」——讓專案 N+1 真正受益於 N 學到的東西，而不是每個新 app 從零冷啟。
+
+**分層模型（記給接手）：**
+
+| 層 | 職責 | 現況 |
+|---|---|---|
+| scaffold | 開新 app 骨架（setup_day0.sh / project.yml / xcodegen） | SunnyWalker 有，per-project |
+| loop（`vein walk`） | 建立/驗證/失敗/除錯 ring | SunnyWalker orchestrator 已跑；vein walk 待實作 |
+| memory（`.vein/`） | 跨專案 decision + debug lore digest | **缺，這是 Vein 的價值點** |
+
+**決策：SunnyWalker 列為 Vein 的第二個 dogfood 對象**（與 Lode 並列）。理由：
+- 專案 brief 本來就要驗 "generic Python project"；SunnyWalker orchestrator 是個自動化 multi-agent loop，是「digest 能不能取代重讀 docs」最嚴苛的壓力測試（agent 沒有人類直覺，digest 不準就立刻爆）。
+- 同時驗證跨語言：Lode = Tauri/Rust/TS，SunnyWalker = Swift/iOS。cert-lore（見 [D-024](#)）在兩者之間共用，正好證明跨專案 recall 的價值。
+
+**Trade-off accepted：**
+- 短期 SunnyFly 要快 → 直接照 `orchestrator/REUSE.md` 複製，先有可跑的 loop，`.vein/` 記憶層後補。不必等 `vein walk` 寫完。
+- 長期收斂方向：`vein walk` 取代手抄 orchestrator，`.vein/` 取代 per-project ring 當記憶。
+
+**Revisit when：** `vein walk` 實作完，回頭評估是否把 SunnyWalker 的 `orchestrator/` migrate 過來（或保留為獨立原型）。
+
+---
+
+### D-024 — Lode lore 回填：既有 50+ 雷區 + app-cert docs 如何進 `.vein/`
+
+**Date:** 2026-05-29
+
+**問題：** Lode 修 bug、送 App Store 認證踩了大量雷，散在 `docs/` 66 個檔（`decisions.md` ~50 條 🔴、`PITFALLS_*.md`、`APPLE_REJECTION_*`、`MAS_SUBMISSION_*`、15 份 `SESSION_REPORT_*`）。如何讓這些經驗被 Vein 保留、且未來可 recall。
+
+**關鍵 reframe：問題不是「沒寫下來」，是「寫下來但無法被有效取用」。** Lode 的 lore 早就寫得很完整，痛點是：
+1. 散在 66 個檔，新 session 要 grep / 通讀才找得到。
+2. 自由格式 markdown，無結構化 tag、無 semantic recall。
+3. **跨不了專案**——SunnyWalker（Swift app）撞到同類 cert 問題時，完全用不到 Lode 的教訓。
+
+**兩軌策略：**
+
+**軌一：bulk backfill 既有 docs（一次性）** — 走 [D-016](#) `vein import --from-file`（MarkItDown）。優先吃高密度檔：`decisions.md`、`PITFALLS_*.md`、`APPLE_REJECTION_*`、`MAS_*`。pipeline：markdown → qwen2.5-coder:7b 抽 candidate（type/title/body_draft）→ interactive y/n/e 確認 → batch `vein log`。**重點：interactive 確認不可省**，50 條雷靠 LLM 全自動分類 type/tag 必有誤判。
+
+**軌二：capture-going-forward（長期）** — 在 sunnywalker loop 裡，D Reviewer 收工 `vein log` 抽當天 decision/lore；`validate.sh` 失敗 `2>&1 | vein pipe` 自動 triage 成 pitfall（[D-022](#) 已設計）。新雷出現當下就進 `.vein/`，不再事後追。
+
+**Lore 分兩類，cert-lore 跨專案價值最高：**
+
+| 類別 | 例子（Lode 實際） | scope |
+|---|---|---|
+| code/debug pitfall | stale closure 吃字、`import * as` 撐爆 bundle、`convertFileSrc` vs Blob URL | project + subsystem（多半綁 Tauri/React，跨專案弱） |
+| **platform / cert lore** | App Store Connect 禁 alpha channel、`com.apple.quarantine` xattr 觸 91109 reject、macOS IAP screenshot 必須 exact 2880×1800 | **跨專案強**——咬任何上架 Mac/iOS app 的人 |
+
+**設計決策：schema 用 `tags` 標記 cross-project lore。** cert/platform 類加 `tags: [appstore, macos, cert, cross-project]`，讓 SunnyWalker / SunnyFly 的 `vein recall "app store reject"` 能跨 `.vein/` 撈到 Lode 的教訓。這也回頭定義了一個需求：**`vein recall` 要支援跨多個 `.vein/` 的 global/shared scope**（Phase 0.x 補；v0.1 先 per-project）。
+
+**Trade-off accepted：**
+- 不追求一次回填全部 66 檔。先 import 4~5 個高密度檔（cert + decisions），夠啟動 dogfood 即可；其餘 SESSION_REPORT 等低密度檔按需再撈。
+- 手工種子（見本次 session 建的 `lode/.vein/`）先證明 schema，import 工具寫完再 bulk。
+
+**Files（本次 session 起手）：** `/Users/lion/Documents/lode/.vein/`（config + STATUS + 3 條 exemplar entry），作為 Lode dogfood 與 import 工具的 golden-output 對照。
+
+**Revisit when：** `vein import --from-file` 實作完，跑一輪 bulk import Lode docs，比對自動產出 vs 手工種子的品質落差。
+
+---
+
 ## 已知 Known Issues
 
 (空 — 還沒寫 code，待累積)

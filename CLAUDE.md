@@ -12,7 +12,7 @@ CLI + (未來) MCP server。Local-first，**markdown-based**，git-friendly。
 - **Family marketing 名：** Lode Vein（對外講話 / blog / homepage 用）
 - **Split naming：** CLI = `vein`、PyPI = `lode-vein`、GitHub = `rex4ssd/vein`、Homebrew = `vein` via `rex4ssd/tap`
 - **位置：** `/Users/lion/Documents/vein/`
-- **狀態：** Phase 0（docs scaffold 完成、Path D 確認，code 未開始）
+- **狀態：** Phase 0 進行中（CLI skeleton 已可跑：init/log/recall/status/ask/list/brief/reindex/import/run/pipe/walk 共 11+ command，core 9 module，`pytest` 32 passed。已 dogfood on Lode `.vein/`（13 entries）+ Vein 自身 `.vein/`。embedding/polish 需本機 ollama，FTS5 recall 無 ollama 可獨立運作）
 - **Positioning：** Path D — decision lore niche，**不是** code RAG broker（避開 7+ 競品紅海）
 - **Stack 預定：** Python 3.11+、Click（CLI）、ollama HTTP API、sqlite-vec、(後續) MCP SDK
 - **License 預定：** MIT（OSS 友善）
@@ -33,11 +33,11 @@ Vein 解法：把專案的 **decision & debug lore** 存進 `.vein/`（像 `.git
 
 ## 3. Phase 0 scope（Path D 形態）
 
-- [ ] CLI skeleton: `vein init / log / recall / review / status`
-- [ ] `.vein/` schema 設計與實作（decisions/*.md + debug_lore/*.md + links/）
-- [ ] ollama integration（capture 時 polish + 小規模 RAG retrieval）
+- [x] CLI skeleton: `vein init / log / recall / status`（+ ask/list/brief/reindex/import/run/pipe/walk）
+- [x] `.vein/` schema 設計與實作（decisions/ + lore/ + pitfalls/ + references/，YAML frontmatter + typed body）
+- [~] ollama integration（embed/polish 已接 ollama HTTP；無 ollama 時 recall graceful degrade 到 FTS5）
 - [ ] Lode v0.2 整合「Send to vein」按鈕（從 diff 抓 decision/lore）
-- [ ] dogfood on Lode 一個月，驗證決策 capture / recall 工作流
+- [~] dogfood on Lode：`.vein/` 已建 13 entries；目標「一個月、≥10 條」其中 entry 數已達標，續驗 recall 工作流
 
 **Visibility（D-008）：** **private repo `rex4ssd/vein` 現在**，三條件達成後 flip public：
 1. `vein init` + `vein log` + `vein recall` 能跑

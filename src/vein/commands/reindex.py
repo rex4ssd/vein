@@ -40,6 +40,13 @@ def cmd_reindex(force: bool, entry_type: str | None) -> None:
 
     idx = store.open_index()
 
+    if idx.relocated_to is not None:
+        console.print(
+            f"[yellow]Note:[/] this filesystem can't host a SQLite index "
+            f"(network/FUSE/synced dir).\n"
+            f"[dim]Index relocated to {idx.relocated_to}[/]\n"
+        )
+
     if force:
         # drop and recreate
         idx.conn.executescript("""

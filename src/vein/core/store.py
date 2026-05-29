@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import sqlite3
 from pathlib import Path
 from typing import Iterator
 
@@ -224,11 +225,48 @@ class VeinStore:
     # ── index ─────────────────────────────────────────────────────
 
     def open_index(self) -> "VeinIndex":
-        """Open (or create) the SQLite index at .vein/index/vein.db."""
+        """Open (or create) the SQLite index.
+
+        Primary location is ``.vein/index/vein.db``. Some filesystems —
+        network mounts (NFS/SMB), FUSE, and certain synced/Docker volumes —
+        cannot host a SQLite DB: fcntl byte-range locking fails and SQLite
+        raises ``OperationalError: disk I/O error``. The index is generated
+        and gitignored, so on failure we transparently relocate it to a
+        per-repo directory under the OS cache dir. ``idx.relocated_to`` is
+        set when this fallback is used so callers can surface a note.
+        """
         from .index import VeinIndex
         db_path = self.vein_dir / "index" / "vein.db"
         db_path.parent.mkdir(exist_ok=True)
-        return VeinIndex(db_path)
+        try:
+            return VeinIndex(db_path)
+        except sqlite3.OperationalError:
+            fallback = self._fallback_index_path()
+            fallback.parent.mkdir(parents=True, exist_ok=True)
+            idx = VeinIndex(fallback)
+            idx.relocated_to = fallback
+            return idx
+
+    def _fallback_index_path(self) -> Path:
+        """Per-repo SQLite index location for filesystems that can't host one.
+
+        Keyed by a hash of the absolute .vein/ path so distinct repos never
+        collide. Prefers ``$XDG_CACHE_HOME``/``~/.cache``; falls back to the
+        system temp dir if the cache dir itself isn't writable.
+        """
+        import hashlib
+        import os
+        import tempfile
+
+        key = hashlib.sha1(str(self.vein_dir.resolve()).encode()).hexdigest()[:12]
+        base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+        try:
+            target = Path(base) / "vein" / key
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            target = Path(tempfile.gettempdir()) / "vein-index" / key
+            target.mkdir(parents=True, exist_ok=True)
+        return target / "vein.db"
 
     # ── brief cache ───────────────────────────────────────────────
 

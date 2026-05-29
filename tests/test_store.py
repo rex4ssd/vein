@@ -181,6 +181,43 @@ def test_open_index_creates_db(store):
     assert (store.vein_dir / "index" / "vein.db").exists()
 
 
+def test_fallback_index_path_is_deterministic_and_per_repo(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    s1 = VeinStore(tmp_path / "a")
+    s1.init(name="a")
+    s2 = VeinStore(tmp_path / "b")
+    s2.init(name="b")
+    assert s1._fallback_index_path() == s1._fallback_index_path()  # stable
+    assert s1._fallback_index_path() != s2._fallback_index_path()  # per-repo
+    assert s1._fallback_index_path().name == "vein.db"
+
+
+def test_open_index_relocates_on_disk_io_error(store, monkeypatch):
+    """Filesystems that can't host SQLite (network/FUSE/synced) must not crash
+    reindex — open_index relocates the generated, gitignored index."""
+    import sqlite3
+
+    import vein.core.index as index_mod
+
+    real_init = index_mod.VeinIndex.__init__
+    repo_index_dir = store.vein_dir / "index"
+
+    def fake_init(self, db_path):
+        # Simulate fcntl-lock failure only for the in-repo path.
+        if repo_index_dir in db_path.parents:
+            raise sqlite3.OperationalError("disk I/O error")
+        real_init(self, db_path)
+
+    monkeypatch.setattr(index_mod.VeinIndex, "__init__", fake_init)
+
+    idx = store.open_index()
+    assert idx.relocated_to is not None
+    assert repo_index_dir not in idx.relocated_to.parents
+    assert idx.relocated_to.exists()
+    idx.close()
+
+
 # ── find / require ────────────────────────────────────────────────
 
 def test_find_from_subdir(tmp_path):

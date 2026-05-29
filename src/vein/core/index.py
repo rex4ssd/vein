@@ -44,6 +44,9 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5(
 class VeinIndex:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Set by VeinStore.open_index when the DB had to be relocated off an
+        # unsupported filesystem (network/FUSE/synced). None = in-repo path.
+        self.relocated_to: Path | None = None
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self._setup()
