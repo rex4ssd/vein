@@ -6,6 +6,11 @@
 # 在 project root 執行
 pip install -e ".[dev]" --break-system-packages   # 第一次，或 pyproject.toml 有改
 
+# ── Validation scripts（直接跑，不需 pytest，跑完貼 log 給 AI）──
+python tests/validate_core.py                     # 42 items: models/store/index/triage/CLI
+python tests/validate_sunnywalker.py              # 21 items: workflow engine + vein walk CLI
+
+# ── pytest unit tests ──
 pytest tests/ -q                  # 全跑
 pytest tests/test_models.py -q    # 只跑 models
 pytest tests/test_store.py  -q    # 只跑 store
@@ -13,9 +18,16 @@ pytest tests/ -q -k "roundtrip"   # 只跑名稱含 roundtrip 的 case
 pytest tests/ -q --tb=short       # 失敗時印 short traceback
 ```
 
-預期輸出（目前 baseline）：
+預期輸出：
 
 ```
+# validate_core.py
+Results: 42 passed, 0 failed  (total 42)
+
+# validate_sunnywalker.py
+Results: 21 passed, 0 failed  (total 21)
+
+# pytest
 30 passed in 0.09s
 ```
 
@@ -26,21 +38,25 @@ pytest tests/ -q --tb=short       # 失敗時印 short traceback
 ```
 tests/
   __init__.py
-  README.md          ← 本檔：執行方式 + 規則
-  test_models.py     ← Entry dataclass 測試
-  test_models.md     ← test_models.py 說明文件 + flowchart
-  test_store.py      ← VeinStore I/O 測試
-  test_store.md      ← test_store.py 說明文件 + flowchart
+  README.md                  ← 本檔：執行方式 + 規則
+  validate_core.py           ← 42 items: models/store/index/triage/CLI（直接 python 跑）
+  validate_sunnywalker.py    ← 21 items: workflow engine + vein walk CLI（直接 python 跑）
+  test_models.py             ← pytest unit tests for Entry dataclass
+  test_models.md             ← test_models.py 說明文件 + flowchart
+  test_store.py              ← pytest unit tests for VeinStore I/O
+  test_store.md              ← test_store.py 說明文件 + flowchart
 ```
 
 ---
 
 ## 測試檔對應表
 
-| 測試檔 | 被測模組 | 說明文件 |
-|--------|----------|----------|
-| `test_models.py` | `src/vein/core/models.py` | [test_models.md](test_models.md) |
-| `test_store.py`  | `src/vein/core/store.py`  | [test_store.md](test_store.md) |
+| 測試檔 | 類型 | 被測模組 | 說明文件 |
+|--------|------|----------|----------|
+| `validate_core.py` | validation | models / store / index / triage / 所有 CLI | — |
+| `validate_sunnywalker.py` | validation | workflow engine + vein walk | — |
+| `test_models.py` | pytest unit | `src/vein/core/models.py` | [test_models.md](test_models.md) |
+| `test_store.py`  | pytest unit | `src/vein/core/store.py`  | [test_store.md](test_store.md) |
 
 ---
 

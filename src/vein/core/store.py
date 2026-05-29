@@ -123,7 +123,7 @@ class VeinStore:
 
         gitignore = self.vein_dir / ".gitignore"
         if not gitignore.exists():
-            gitignore.write_text("index/\nBRIEF.md\n", encoding="utf-8")
+            gitignore.write_text("index/\nBRIEF.md\nWALKER.json\n", encoding="utf-8")
 
         return True
 

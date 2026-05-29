@@ -1031,6 +1031,120 @@ vein/
 
 ---
 
+### D-021 — Automated Context Passing：消除 copy-paste 循環
+
+**Date:** 2026-05-29
+
+**問題：** 開發中最浪費時間的 pattern 是手動 copy-paste 循環：
+run → fail → copy error → 開 Claude/Gemini tab → paste → copy fix → paste 回 terminal → repeat。
+每個循環 30–90 秒，每天 10–20 次。更深的問題是 context 斷裂（AI 沒有專案背景）和知識流失（fix 後沒有記錄）。
+
+**核心洞察：** copy-paste 是「人工做 context routing」的症狀。解法是讓程式自動路由：
+錯誤 → vein search → 命中就顯示 pitfall fix，未命中才呼叫 AI（帶 lore context）→ 記錄回 vein。
+
+**Choice：** `vein pipe` + `vein run` + shell hook 三層架構
+
+```
+# 層次 1: pipe（現在就能用）
+cargo check 2>&1 | vein pipe --ai
+
+# 層次 2: run wrapper（現在就能用）
+vein run cargo check --ai --log
+
+# 層次 3: shell hook 後，一鍵 triage 上一條失敗指令
+cargo check   # fail
+vt --ai       # 自動 re-run + pipe 給 vein
+```
+
+**AI 在這個架構裡是函數節點，不是對話對象：**
+- `qwen2.5-coder:7b` = error triage 函數（input: cmd+error+lore, output: fix）
+- `nomic-embed-text` = 語意搜尋函數（input: text, output: vector）
+- 人只在 AI 答不了或需要 trade-off 時介入
+
+**error term extraction（`triage.py`）：**
+- 過濾 Compiling / warning / INFO / DEBUG 等 noise 行
+- 抓 Error / Exception / FAILED / note 等 signal 行
+- 壓縮到 ≤600 chars，作為 vein grep query + AI prompt context
+
+**關鍵 trade-off：**
+- `vein run CMD` 需要 subprocess（不支援 alias、shell function）；
+  `vein pipe` 更通用，任何指令都能 pipe 給它
+- shell hook `vt` 用 `fc -ln -1` 拿 last command，zsh only（bash 需要另一個方法）
+- AI 建議是 local qwen2.5-coder:7b，離線 / 慢機器可用 `--no-ai` 只查 vein
+
+**Files：**
+- `src/vein/core/triage.py` — error extraction + ollama triage call
+- `src/vein/commands/pipe.py` — `vein pipe` command
+- `src/vein/commands/run.py`  — `vein run` command
+- `shell/vein.zsh`            — zsh integration (vt / vr / vp / vb aliases)
+- `docs/auto_context.md`      — 完整設計文件 + 使用場景
+
+**Revisit when：** Phase 0.3 MCP server 完成後，改成 AI 直接 call `mcp:vein:search`，不再需要 pipe。
+
+---
+
+### D-022 — Sunnywalker：multi-agent workflow runner 命名與設計
+
+**Date:** 2026-05-29
+
+**問題：** 開發一個 feature 需要多輪 code → validate → fix → review 循環，每次手動跑腳本、看 log、決定下一步，還是靠人腦路由。需要一個可以自動執行「AI A coding → AI B validate → AI C report → AI D review → loop」的 pipeline。
+
+**命名：sunnywalker**
+- 有方向感（walker = 按步驟往前走）
+- 暗示 AI agents 協作（多個 walker）
+- 命令入口：`vein walk`（subcommand group）
+- 狀態檔：`.vein/WALKER.json`（gitignored）
+
+**架構選擇：YAML workflow definition + WorkflowRunner state machine**
+
+```
+sunnywalker.yaml           ← 定義步驟 + routing rules（committed）
+.vein/WALKER.json          ← runtime state（gitignored，可 resume）
+shell/sunnywalker/         ← 每個 step 的 script templates
+  b_validate.sh            ← 使用者自訂 test/lint 指令
+  c_report.py              ← 自動從 vein 生成 markdown report
+  d_review.py              ← ollama 讀 vein entries → PASS/FAIL
+  e_ca.sh                  ← git commit
+```
+
+**on_fail 路由設計：**
+- `stop` — 最保守，等人介入
+- `goto:code` — 自動回 coding（最常用）
+- `retry:3` — 自動 retry，適合 flaky tests
+- `skip` — non-critical step（e.g. report 失敗不阻擋）
+- `ai_decide` — ollama 決定跳去哪個 step（實驗性）
+
+**human_step 設計：**
+- `human_step: true` 的 step 會暫停等 Enter
+- 這是「你 / AI 做完 coding 後按 Enter 繼續」的接口
+- 未來 MCP 模式下，AI coding agent 完成後直接 signal done，不需要 human Enter
+
+**Templates 依 tech stack：**
+- `--template python`：pytest + ruff
+- `--template rust`：cargo check + cargo test
+- `--template tauri`：tsc + cargo check（for Lode）
+
+**Vein 在 sunnywalker 裡的角色：**
+- b_validate.sh 失敗 → `2>&1 | vein pipe` → 自動 triage + 記錄 pitfall
+- c_report.py 從 vein 讀 entries，輸出 WALKER_REPORT.md
+- d_review.py 讀近 7 天 vein entries，AI 決定 PASS/FAIL
+- 整個 workflow 的 "shared memory" 是 `.vein/`，不是 WALKER.json
+
+**Key trade-off：**
+- WorkflowRunner 故意設計成「dumb runner」— 只跑 script、讀 exit code、routing
+- AI logic 全在 scripts 裡（ollama call in d_review.py），不在 runner
+- 好處：任何 script 都能插入，runner 不需要知道 AI 細節
+- 壞處：scripts 需要手動維護；未來 MCP 模式可以消除這個 overhead
+
+**Files：**
+- `src/vein/core/workflow.py`  — WorkflowRunner, WalkerState, StepDef
+- `src/vein/commands/walk.py`  — `vein walk` subcommand group
+- `docs/sunnywalker.md`        — 完整設計文件 + 使用指南
+
+**Revisit when：** Phase 0.3 MCP server — AI coding agent 直接 signal `vein walk step code pass`，不需要 human Enter。
+
+---
+
 ## 已知 Known Issues
 
 (空 — 還沒寫 code，待累積)
