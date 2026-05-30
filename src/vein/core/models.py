@@ -13,6 +13,18 @@ import yaml
 
 EntryType = Literal["decision", "lore", "pitfall", "reference"]
 EntryStatus = Literal["active", "resolved", "superseded"]
+# How fast a claim decays from correct → wrong as the world/AI changes (D-026).
+# external-fact: vendor APIs, platform rules, "current best practice" — decay fast.
+# internal-invariant: our own architecture rationale — decay slowly.
+Volatility = Literal["external-fact", "internal-invariant", "unknown"]
+
+# Re-validation TTL (days) by volatility class. Past this, an active entry is
+# flagged "may be stale" in recall — it doesn't lie about being true forever.
+VOLATILITY_TTL_DAYS: dict[str, int] = {
+    "external-fact":      180,   # ~6 months
+    "unknown":            365,   # ~1 year (un-classified default)
+    "internal-invariant": 1095,  # ~3 years (rarely flagged)
+}
 
 # Body section headers by type (used by polish + display)
 BODY_SECTIONS: dict[str, list[str]] = {
@@ -23,6 +35,15 @@ BODY_SECTIONS: dict[str, list[str]] = {
 }
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
+
+
+def _parse_dt(value) -> datetime:
+    """Coerce a frontmatter date value (str or datetime) to tz-aware UTC."""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value
 
 
 @dataclass
@@ -38,6 +59,8 @@ class Entry:
     related: list[str] = field(default_factory=list)
     status: EntryStatus = "active"
     superseded_by: str = ""
+    volatility: str = "unknown"
+    verified_at: datetime | None = None
     body: str = ""
     _path: Path | None = field(default=None, repr=False, compare=False)
 
@@ -60,6 +83,7 @@ class Entry:
         source_url: str = "",
         source_title: str = "",
         related: list[str] | None = None,
+        volatility: str = "unknown",
     ) -> "Entry":
         return cls(
             id=cls.new_id(),
@@ -71,6 +95,7 @@ class Entry:
             source_url=source_url,
             source_title=source_title,
             related=related or [],
+            volatility=volatility,
             body=body,
         )
 
@@ -96,6 +121,10 @@ class Entry:
             fm["status"] = self.status
         if self.superseded_by:
             fm["superseded_by"] = self.superseded_by
+        if self.volatility and self.volatility != "unknown":
+            fm["volatility"] = self.volatility
+        if self.verified_at:
+            fm["verified_at"] = self.verified_at.isoformat()
 
         yaml_str = yaml.dump(fm, allow_unicode=True, sort_keys=False,
                               default_flow_style=False).rstrip()
@@ -113,11 +142,10 @@ class Entry:
         fm = yaml.safe_load(m.group(1)) or {}
         body = m.group(2).strip()
 
-        date_val = fm.get("date", datetime.now(timezone.utc))
-        if isinstance(date_val, str):
-            date_val = datetime.fromisoformat(date_val)
-        if date_val.tzinfo is None:
-            date_val = date_val.replace(tzinfo=timezone.utc)
+        date_val = _parse_dt(fm.get("date", datetime.now(timezone.utc)))
+
+        verified_raw = fm.get("verified_at")
+        verified_at = _parse_dt(verified_raw) if verified_raw else None
 
         entry = cls(
             id=fm.get("id", path.stem),
@@ -131,6 +159,8 @@ class Entry:
             related=fm.get("related") or [],
             status=fm.get("status", "active"),
             superseded_by=fm.get("superseded_by", ""),
+            volatility=fm.get("volatility", "unknown"),
+            verified_at=verified_at,
             body=body,
         )
         entry._path = path
@@ -146,6 +176,40 @@ class Entry:
     @property
     def date_str(self) -> str:
         return self.date.strftime("%Y-%m-%d")
+
+    # ── temporal truth-maintenance (D-026) ────────────────────────
+
+    @property
+    def effective_date(self) -> datetime:
+        """Last point this entry was known good: verified_at, else date."""
+        d = self.verified_at or self.date
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+    @property
+    def age_days(self) -> int:
+        return max(0, (datetime.now(timezone.utc) - self.effective_date).days)
+
+    @property
+    def ttl_days(self) -> int:
+        return VOLATILITY_TTL_DAYS.get(self.volatility, VOLATILITY_TTL_DAYS["unknown"])
+
+    @property
+    def is_stale(self) -> bool:
+        """Active entry older than its volatility TTL — may have decayed to wrong."""
+        return self.status == "active" and self.age_days > self.ttl_days
+
+    @property
+    def staleness_note(self) -> str:
+        if not self.is_stale:
+            return ""
+        months = self.age_days // 30
+        return f"captured ~{months}mo ago, may be stale"
+
+    @property
+    def recall_demotion(self) -> int:
+        """Sort key for recall: superseded entries sink to the bottom (a newer
+        entry replaced them); active/resolved keep their relevance order."""
+        return 1 if self.status == "superseded" else 0
 
     @property
     def summary(self) -> str:

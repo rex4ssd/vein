@@ -1248,6 +1248,67 @@ shell/sunnywalker/         ← 每個 step 的 script templates
 
 ---
 
+### D-026 — 資料分層邊界 + Lore 是會衰變的斷言（不是永恆事實）
+
+**Date:** 2026-05-29
+
+**問題：** AI 協作會狂產資料（Markdown / JSON / AST / test log）。兩個風險：(1) Vein 被當垃圾桶 → 檢索撈出過期垃圾、token 塞爆；(2) 更隱蔽——**寫入當下正確的 lore，很久以後會變錯**，因為世界 / 平台 / AI 在變（Apple 改 cert 規則、某 API 改簽名、某「最佳實踐」被取代）。對 → 錯是時間造成的，write-time 擋不住。
+
+---
+
+**原則 A — 資料分層：distilled-in / raw-out。**
+
+Vein 只存「蒸餾過的 why」（decision / pitfall / lore），**raw artifact 永遠不進 Vein**。對到 Hot/Warm/Cold：
+
+| 層 | 內容 | 位置 | Vein 的角色 |
+|---|---|---|---|
+| Hot | 當前 sprint context | 雲端 LLM context cache | 不存；只用 `brief`（≤2K digest）決定餵什麼進去 |
+| Warm | ADR / 決策 / 雷區 | **`.vein/` 本體**（typed markdown + git） | core |
+| Cold | AST / test log / SSD log | 旁邊的 Parquet / DuckDB（columnar，~1/10 JSON size） | 只存一條 `type: reference` 指過去（`source_url`），不存 raw |
+
+效果：Vein 永遠只有幾百~幾千條精煉 entry（[D-002](#) ≤10K chunks，FTS5 + flat cosine 都快），GB 級 raw 在 cold store，要時才撈。**邊界守則：任何「機器產的大量原始輸出」一律進 cold layer，Vein 端只留指標。**
+
+---
+
+**原則 B — Lore 是 point-in-time 斷言，不是永恆事實。**（Rex 2026-05-29 補充）
+
+[原則 A 之外最關鍵的一條]。**write-time dedup（FTS5 ≥80% title match）只處理「空間冗餘」——兩條 entry 講同一件事。它抓不到「時間衰變」——一條當年對、現在錯。** 因為寫入當下不可能知道未來會怎麼變。所以：
+
+- **「語意去重在 ingestion 當下做」這句在當下成立，但不能當作全部。** 它是必要、非充分。
+- correct → wrong 的轉變**只能事後偵測**，靠週期性 re-validation，不是一次性 write-time gate。
+- 因此 `vein consolidate` 的本質是 **truth-maintenance pass，不是 dedup GC**。
+
+**抗腐爛機制（roadmap，分 schema 改動 vs pass）：**
+
+1. **volatility 分級（schema，新 frontmatter 欄位）：** `volatility: external-fact | internal-invariant`。
+   - `external-fact`（Apple cert 規則、vendor API、「現在最佳做法」）→ 衰變快，短 revalidation TTL。
+   - `internal-invariant`（我們的 mmap 設計、為何走 native drag-drop）→ 衰變慢，幾乎不過期。
+   - recall 對兩類給不同 age-decay 斜率。
+2. **temporal metadata（schema）：** 既有 `date` 之外加 `verified_at`（最後一次確認仍為真）；既有 body 的 **`Revisit when:`** section 升級成 machine-readable trigger（條件命中 → 自動排進 re-validation queue）。
+3. **status-aware + age-decay recall ranking：** schema 已有 `active / resolved / superseded`，但 recall 還沒用。改成：`superseded` 降到底、`active` 但超過 volatility TTL 的標 ⚠「captured N months ago, may be stale」、age-decay 排序。**這才是真正防「撈出過期垃圾」的關鍵，光靠 write-time 不夠。**
+4. **`vein consolidate`（pass，Phase 2）：** 週期或 on-demand 重新檢視 entries——
+   - 偵測 supersession（新 entry 與舊衝突 → 舊的標 `superseded` + 填 `superseded_by`）。
+   - 標 stale（過 TTL 或 `Revisit when` 命中）→ 排進**人工/LLM 重驗 queue**。
+   - **不自動刪**，輸出候選清單走 interactive confirm（跟 ingestion 同一套閘哲學）。
+
+> 對照系統層的 memory 原則：「recalled memory 反映寫入當時為真的狀態——若提到某 file/function/flag，推薦前要先驗證它還存在。」Vein 的 lore 一模一樣：**capture 的是 point-in-time truth，用之前要當它可能已過期。**
+
+---
+
+**Trade-off accepted：**
+- volatility / verified_at 增加 capture 時的一點 metadata 負擔 → 給合理 default（log 時 LLM 可猜 volatility，人工可改）。
+- consolidate 需要算力（embedding 比對 + LLM 重判）→ 設計成 off-peak / on-demand，不擋日常 recall。
+
+**Rejected：**
+- 「write-time curate 就夠，不需要事後 pass」：被 Rex 的時間衰變論點否決——空間去重 ≠ 時間真值維護。
+- 自動刪過期 entry：違背「lore 是 project asset、debug 史要保留」；過期的標 superseded/archived，不刪（resolved pitfall 仍是歷史價值）。
+
+**Files（待實作，標 Phase）：** schema 改動（`volatility` / `verified_at`）+ recall ranking → Phase 1；`vein consolidate` → Phase 2。data_format.md §2 schema 與 §4 quality gates 需依本決策更新。
+
+**Revisit when：** entry 數破千、或 dogfood 中真的撈到「當年對現在錯」的 entry——那會是驗證 consolidate 設計的第一個 golden case。
+
+---
+
 ## 已知 Known Issues
 
 (空 — 還沒寫 code，待累積)

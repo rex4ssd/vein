@@ -98,6 +98,9 @@ def cmd_recall(query: str, limit: int, budget: str, raw_output: bool,
             console.print("[dim]Or add [bold]-x[/] to search across all projects.[/]")
         return
 
+    # D-026: superseded entries sink; relevance order preserved within group.
+    entries.sort(key=lambda e: e.recall_demotion)
+
     if entries:
         _render_results(entries, query=query, mode=search_mode, raw_output=raw_output)
     elif cross_project:
@@ -127,8 +130,17 @@ def _render_xproject(xhits: list, *, raw_output: bool) -> None:
                 Markdown(entry.body) if entry.body else "[dim](no body)[/]",
                 title=header,
                 border_style=color,
-                subtitle=f"[dim]{entry.date_str} · {', '.join(entry.tags[:4])}[/]",
+                subtitle=_subtitle(entry),
             ))
+
+
+def _subtitle(entry) -> str:
+    base = f"[dim]{entry.date_str} · {', '.join(entry.tags[:4])}[/]"
+    if entry.staleness_note:
+        base += f"  [yellow]⚠ {entry.staleness_note}[/]"
+    elif entry.status == "superseded":
+        base += "  [dim red]superseded[/]"
+    return base
 
 
 def _render_results(
@@ -170,5 +182,5 @@ def _render_results(
                 Markdown(entry.body) if entry.body else "[dim](no body)[/]",
                 title=header,
                 border_style=color,
-                subtitle=f"[dim]{entry.date_str} · {', '.join(entry.tags[:4])}[/]",
+                subtitle=_subtitle(entry),
             ))

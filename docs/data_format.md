@@ -47,6 +47,8 @@ source_title: ""
 related: [20260526-120000]   # 其他 entry 的 id（timestamp）
 status: active               # active | resolved | superseded
 superseded_by: ""            # 若 superseded，填新 entry id
+volatility: internal-invariant  # external-fact | internal-invariant | unknown（D-026）
+verified_at: ""              # 最後一次確認仍為真的時間；空=用 date（D-026）
 ---
 
 **Why:** SystemC DMA model is event-driven (sc_event); polling would
@@ -71,6 +73,21 @@ to queue from callback context.
 | `reference` | **Summary:** + source_url | Why relevant |
 
 Section 不強制格式，但 LLM polish prompt 會引導生成這個結構。
+
+### Temporal truth-maintenance（D-026）
+
+`volatility` + `verified_at` 表達「lore 是 point-in-time 斷言，不是永恆事實」。
+write-time dedup 只擋空間冗餘；時間衰變（當年對、現在錯）靠這兩個欄位事後抓。
+
+| volatility | 例 | re-validation TTL |
+|---|---|---|
+| `external-fact` | Apple cert 規則、vendor API、「現在最佳做法」 | 180 天 |
+| `unknown`（default，未分類 / 舊檔） | — | 365 天 |
+| `internal-invariant` | 我們的 mmap 設計、為何走 native drag-drop | 1095 天 |
+
+- **staleness：** `status==active` 且 `now - (verified_at or date) > TTL` → recall 標 ⚠「captured ~Nmo ago, may be stale」（不刪、不擋，只警示）。
+- **recall ranking：** `superseded` 沉到底（relevance order 在組內保留），`active` 維持原序。
+- 實作見 `core/models.py`（`is_stale` / `staleness_note` / `recall_demotion` / `VOLATILITY_TTL_DAYS`），`vein consolidate`（Phase 2）負責週期性 supersede / 重驗。
 
 ---
 

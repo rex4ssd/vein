@@ -59,15 +59,24 @@ def cmd_ask(question: str, limit: int, entry_type: str | None,
                   + (f", {len(xhits)} cross-project" if cross_project else "")
                   + ")[/]\n")
 
+    # D-026: superseded entries sink; relevance order preserved within group.
+    results.sort(key=lambda es: es[0].recall_demotion)
+
     def _render(entry, *, project: str | None = None) -> None:
         color = {"decision": "cyan", "lore": "green",
                  "pitfall": "yellow", "reference": "blue"}.get(entry.type, "white")
         tag = f"[magenta]{project}[/]  " if project else ""
+        flag = ""
+        if entry.staleness_note:
+            flag = f"  [yellow]⚠ {entry.staleness_note}[/]"
+        elif entry.status == "superseded":
+            flag = "  [dim red]superseded[/]"
         header = (
             f"{tag}[{color}]{entry.type}[/]  "
             f"[bold]{entry.title}[/]  "
             f"[dim]{entry.date_str}[/]"
             + (f"  [dim]tags: {', '.join(entry.tags[:4])}[/]" if entry.tags else "")
+            + flag
         )
         if raw:
             click.echo(f"\n--- {('[' + project + '] ') if project else ''}{entry.id} ---")
