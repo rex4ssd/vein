@@ -308,3 +308,31 @@ class VeinStore:
         results.sort(key=lambda x: (-x[1], x[0].date), reverse=False)
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:limit]
+
+
+def cross_project_search(
+    query: str,
+    *,
+    exclude_root: Path | None = None,
+    limit: int = 5,
+) -> list[tuple[str, Entry, int]]:
+    """Keyword-search every registered .vein/ except ``exclude_root``.
+
+    Returns ``[(project_name, entry, score)]`` sorted by score desc. Uses grep
+    (not the per-project SQLite index) so it needs no ollama and works even when
+    a project's index hasn't been built. This powers ``recall -x`` / ``ask -x``.
+    """
+    from . import registry
+
+    excl = exclude_root.resolve() if exclude_root else None
+    out: list[tuple[str, Entry, int]] = []
+    for root in registry.roots():
+        if excl is not None and root.resolve() == excl:
+            continue
+        store = VeinStore(root)
+        name = (store.load_config().get("project", {}) or {}).get("name") or root.name
+        for entry, score in store.grep_entries(query, limit=limit):
+            out.append((name, entry, score))
+
+    out.sort(key=lambda x: x[2], reverse=True)
+    return out[:limit] if limit else out

@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
-from ..core.store import VeinStore
+from ..core.store import VeinStore, cross_project_search
 
 console = Console()
 
@@ -20,7 +20,10 @@ console = Console()
               help="Output budget tier")
 @click.option("--raw", "raw_output", is_flag=True)
 @click.option("--fts-only", is_flag=True, help="Force keyword-only search (skip embedding)")
-def cmd_recall(query: str, limit: int, budget: str, raw_output: bool, fts_only: bool) -> None:
+@click.option("--cross-project", "-x", is_flag=True,
+              help="Also search other repos registered via `vein init`")
+def cmd_recall(query: str, limit: int, budget: str, raw_output: bool,
+               fts_only: bool, cross_project: bool) -> None:
     """Semantic search over .vein/ lore.
 
     Uses FTS5 BM25 pre-filter → nomic-embed-text cosine re-rank when ollama is
@@ -30,7 +33,7 @@ def cmd_recall(query: str, limit: int, budget: str, raw_output: bool, fts_only: 
     Examples:
       vein recall "DMA timeout"
       vein recall "race condition" --budget 32k
-      vein recall "uart" --fts-only
+      vein recall "app store reject" -x      # search across all projects
     """
     store = VeinStore.require()
     cfg = store.load_config()
@@ -60,7 +63,7 @@ def cmd_recall(query: str, limit: int, budget: str, raw_output: bool, fts_only: 
             pass
 
     if not hit_ids:
-        # FTS fallback (index exists) or full grep fallback
+        # FTS fallback (index exists)
         try:
             idx = store.open_index()
             hit_ids = idx.fts_search(query, k=limit)
@@ -70,34 +73,62 @@ def cmd_recall(query: str, limit: int, budget: str, raw_output: bool, fts_only: 
         except Exception:
             pass
 
-    # Final fallback: grep
-    if not hit_ids:
-        results = store.grep_entries(query, limit=limit)
-        if not results:
-            console.print(f"[yellow]No results for:[/] {query}")
-            console.print("[dim]Tip: vein reindex — to build search index[/]")
-            return
-        _render_results(
-            [entry for entry, _ in results],
-            query=query,
-            mode="keyword",
-            raw_output=raw_output,
-        )
-        return
+    # Resolve local hits → Entry objects (grep as final fallback)
+    entries: list = []
+    if hit_ids:
+        for eid in hit_ids:
+            try:
+                entries.append(store.read_entry(eid))
+            except Exception:
+                continue
+    else:
+        entries = [entry for entry, _ in store.grep_entries(query, limit=limit)]
+        search_mode = "keyword"
 
-    # Resolve hit_ids → Entry objects
-    entries = []
-    for eid in hit_ids:
-        try:
-            entries.append(store.read_entry(eid))
-        except (KeyError, Exception):
-            continue
+    # Cross-project hits from other registered repos (keyword grep, no ollama)
+    xhits = (
+        cross_project_search(query, exclude_root=store.root, limit=limit)
+        if cross_project else []
+    )
 
-    if not entries:
+    if not entries and not xhits:
         console.print(f"[yellow]No results for:[/] {query}")
+        console.print("[dim]Tip: vein reindex — to build search index[/]")
+        if not cross_project:
+            console.print("[dim]Or add [bold]-x[/] to search across all projects.[/]")
         return
 
-    _render_results(entries, query=query, mode=search_mode, raw_output=raw_output)
+    if entries:
+        _render_results(entries, query=query, mode=search_mode, raw_output=raw_output)
+    elif cross_project:
+        console.print(f"\n[bold]Recall:[/] [cyan]{query}[/]  "
+                      f"[dim](nothing here — cross-project only)[/]")
+
+    if xhits:
+        console.print("\n[dim]── from other projects ──────────────────────────[/]")
+        _render_xproject(xhits, raw_output=raw_output)
+
+
+def _render_xproject(xhits: list, *, raw_output: bool) -> None:
+    for project, entry, _score in xhits:
+        color = {
+            "decision": "cyan", "lore": "green",
+            "pitfall": "yellow", "reference": "blue",
+        }.get(entry.type, "white")
+        header = (
+            f"[magenta]{project}[/]  [{color}]{entry.type}[/]  "
+            f"[bold]{entry.title}[/]  [dim]{entry.id}[/]"
+        )
+        if raw_output:
+            click.echo(f"\n=== [{project}] {entry.id} ===")
+            click.echo(entry.to_file_content())
+        else:
+            console.print(Panel(
+                Markdown(entry.body) if entry.body else "[dim](no body)[/]",
+                title=header,
+                border_style=color,
+                subtitle=f"[dim]{entry.date_str} · {', '.join(entry.tags[:4])}[/]",
+            ))
 
 
 def _render_results(

@@ -1219,6 +1219,35 @@ shell/sunnywalker/         ← 每個 step 的 script templates
 
 ---
 
+### D-025 — Cross-project recall：global registry + grep，不建跨專案 index
+
+**Date:** 2026-05-29
+
+**問題：** [D-024](#) 點名 cross-project recall 是讓新專案（SunnyWalker/SunnyFly）受益於舊專案（Lode）lore 的關鍵——尤其 cert lore。需要一個機制讓 `vein recall`/`ask` 跨多個 `.vein/` 搜尋。
+
+**Choice：** global registry（plain text）+ per-repo grep 聚合，加 `-x/--cross-project` flag。
+
+- **Registry：** `$XDG_CONFIG_HOME/vein/registry.txt`（default `~/.config/vein/registry.txt`），一行一個 project root 絕對路徑。`vein init` 自動註冊（含對既有 repo 再跑 init 也會補登記）。`roots()` 回傳時自動 dedup + 濾掉已不存在 `.vein/` 的路徑。
+- **搜尋：** `store.cross_project_search(query, exclude_root, limit)` 對每個註冊 repo 跑 `grep_entries`（純 keyword），結果標註 project name、依 score 合併排序。
+- **Flag：** `recall -x` / `ask -x` 在本地結果之後附「── from other projects ──」區塊。
+
+**為什麼用 grep 不用跨專案 embedding index：**
+- 跨專案 recall 本質是廣域 keyword sweep，grep 純 Python、零依賴、**不需要 ollama、不需要對方 repo 已 build index**（對方 index 可能因 [D-?](#)（sqlite-on-FUSE pitfall）被 relocate 或根本沒建）。
+- scale 夠：每 repo 數十～數百條 entry，grep 線性掃可接受。
+- 本地搜尋仍保留 semantic/FTS 品質；只有 cross-project 段落降級成 keyword。這個 trade-off 對「我在別的專案大概踩過類似雷嗎」這種探索式查詢剛好。
+
+**Rejected：**
+- 集中式單一大 index（所有專案 embeddings 進一個 DB）：破壞 Vein 的 per-project / git-tracked / 單檔 rsync 模型（[D-002](#)），且要解決跨 repo embedding 版本一致性。
+- 每次 cross-project 都即時對每個 repo 跑 ollama embed：慢、且 ollama 不在就完全不能用，違背 graceful-degrade 原則。
+
+**驗證（dogfood）：** 空的 SunnyWalker repo 跑 `vein ask "app store reject" -x` → 正確撈出 Lode 的 alpha-channel cert pitfall，標註來源 `lode`。tests：`tests/test_registry.py`（registry idempotent / 濾 missing / init 自動註冊 / cross-project 找得到他人 lore / 排除自身）。共 38 passed。
+
+**Files：** `src/vein/core/registry.py`（新）、`src/vein/core/store.py::cross_project_search`、`src/vein/commands/{init,recall,ask}.py`。
+
+**Revisit when：** registry 條目變多、或想要「semantic 跨專案」時，評估是否做 opt-in 的 shared embedding index（但先確認 grep 真的不夠用）。
+
+---
+
 ## 已知 Known Issues
 
 (空 — 還沒寫 code，待累積)

@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
+from ..core import registry
 from ..core.store import VeinStore
 
 console = Console()
@@ -28,10 +29,14 @@ def cmd_init(name: str | None, force: bool) -> None:
 
     if store.vein_dir.exists() and not force:
         console.print(f"[yellow]Already initialized:[/] {store.vein_dir}")
+        # Re-register so an existing repo joins cross-project recall.
+        if registry.register(cwd):
+            console.print("[dim]Registered for cross-project recall.[/]")
         console.print("Use [bold]--force[/] to re-create.")
         return
 
     created = store.init(name=project_name, force=force)
+    registry.register(cwd)
 
     if created:
         console.print(Panel(
