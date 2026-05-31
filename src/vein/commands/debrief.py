@@ -92,8 +92,20 @@ def _trim_diff(diff: str) -> str:
     return diff[:_DIFF_TOO_LARGE] + f"\n... (diff trimmed at {_DIFF_TOO_LARGE} chars)"
 
 
-def _call_ollama_debrief(diff: str, base_url: str, model: str) -> list[dict] | None:
-    """Ask ollama to extract decisions from a diff. Returns list of dicts or None."""
+class _OllamaResult:
+    """Distinguish connection failure from 'model found nothing'."""
+    UNAVAILABLE = None          # couldn't reach ollama
+    EMPTY: list = []            # reached, but nothing worth logging
+
+
+def _call_ollama_debrief(diff: str, base_url: str, model: str):
+    """Ask ollama to extract decisions from a diff.
+
+    Returns:
+        list[dict]  — entries found
+        []          — ollama responded but found nothing worth logging
+        None        — ollama unreachable / hard error
+    """
     try:
         import httpx
     except ImportError:
@@ -126,12 +138,28 @@ def _call_ollama_debrief(diff: str, base_url: str, model: str) -> list[dict] | N
                 raw = raw[4:]
 
         parsed = json.loads(raw)
-        if not isinstance(parsed, list):
-            return None
-        return parsed[:_MAX_ENTRIES]
 
+        # model returned [] or {} or {"items":[]} → nothing found (not an error)
+        if isinstance(parsed, dict):
+            # try common wrappers e.g. {"entries": [...]}
+            for key in ("entries", "items", "results", "decisions"):
+                if isinstance(parsed.get(key), list):
+                    parsed = parsed[key]
+                    break
+            else:
+                return []   # empty dict = nothing found
+
+        if not isinstance(parsed, list):
+            return []       # unexpected shape = treat as nothing found
+
+        # filter out malformed items
+        valid = [item for item in parsed if isinstance(item, dict) and item.get("title")]
+        return valid[:_MAX_ENTRIES]
+
+    except (httpx.ConnectError, httpx.TimeoutException):
+        return None         # genuine connection failure
     except Exception:
-        return None
+        return []           # parse error / other — treat as nothing found
 
 
 # ── command ───────────────────────────────────────────────────────────────────
@@ -199,7 +227,7 @@ def cmd_debrief(since: str, silent: bool, dry_run: bool, model: str) -> None:
 
     if results is None:
         if not silent:
-            console.print("[yellow]ollama unavailable — skipped[/]")
+            console.print("[yellow]ollama unavailable (connection error) — skipped[/]")
         return
 
     if not results:
