@@ -1312,3 +1312,90 @@ Vein 只存「蒸餾過的 why」（decision / pitfall / lore），**raw artifac
 ## 已知 Known Issues
 
 (空 — 還沒寫 code，待累積)
+
+---
+
+### D-027 — 捕獲策略：debrief > hook > MCP > manual（2026-05-31）
+
+**問題：**
+自動捕獲 → 雜訊太多；手動捕獲 → 沒人做。這個矛盾的解法是找到正確的觸發點。
+
+**決定：四層捕獲架構，按品質排序**
+
+```
+1. MCP vein_log()     — Claude 自己決定記什麼，品質最高，但只在 AI session 中
+2. vein debrief       — commit 後 AI 掃 diff，自動提取，無需人工，中等品質
+3. vein hooks install — post-commit 自動跑 debrief --silent，完全透明
+4. vein log (手動)    — 最高品質，不強求
+```
+
+**Why debrief 是主力：**
+- `git commit` 是開發者已經在做的動作，不改習慣
+- diff 是完整的「這次做了什麼」記錄
+- 本機 AI 在 commit 後有充分上下文判斷「值不值得記」
+- 沒有 ollama → graceful skip，不影響工作流
+- 互動式 hook（問 d/l/p/Enter）被廢棄：太打斷 flow，跟「不改習慣」矛盾
+
+**Rejected approaches:**
+- PostToolUse hook（每個工具呼叫都觸發）：捕捉「做了什麼」，沒有「為什麼」
+- Stop hook 全收：每個 Claude turn 都記，噪音爆量
+- 互動式 post-commit prompt：打斷 git 工作流，用戶會關掉
+
+---
+
+### D-028 — Multi-agent / Multi-project：.vein/ 是 AI-agnostic 共享記憶層（2026-05-31）
+
+**定位重新確認：**
+
+Vein 的真正護城河不是「比其他 note 工具更好」，而是**唯一一個以 repo 為單位、AI-agnostic 的決策記憶層**。
+
+```
+沒有 Vein：
+  Claude session → 記在 Claude memory（Claude 限定）
+  Gemini session → 重新載入，沒有上一次的 context
+  換工具 → 全部歸零
+
+有 Vein：
+  任何 AI session → vein brief → 同一份 .vein/ ground truth
+  Claude 記的，Gemini 也能讀
+  換工具，.vein/ 跟著 repo 走
+```
+
+**Multi-agent 的具體價值：**
+1. 每個 AI 在 session 開始呼叫 `vein_brief()` → 相同 orientation，不重複解釋
+2. Agent A 做了決定 → `vein_log()` → Agent B 下次讀到
+3. `vein debrief` 在 commit 後自動補捉 Agent 沒記到的部分
+4. 跨專案：`vein recall -x` 讓 Lode 的決定在 Vein 開發時也可見
+
+**Multi-project 的具體價值：**
+- Rex 同時跑 Lode / Vein / fubon_stock / YSK pipeline
+- 每個有自己的 .vein/
+- `vein recall -x` 跨專案搜尋
+- 未來：`vein global brief` 跨所有專案的 orientation digest
+
+**Marketing headline 修正：**
+- 舊：「決策 lore 歸檔工具」
+- 新：「**AI-agnostic project memory — 任何 AI、任何 session、同一份決策記憶**」
+
+---
+
+### D-029 — 錯誤方向修正：縮焦 core，把 walk/run/pipe 降級（2026-05-31）
+
+**現況：** vein 有 13 個 command。對新用戶來說太多，定位模糊。
+
+**問題命令：**
+
+| Command | 問題 |
+|---------|------|
+| `vein walk` (sunnywalker) | 完整 workflow runner，跟「決策 lore」定位不同。是 Rex 的個人工具，不是 vein 的核心 |
+| `vein run` / `vein pipe` | Error triage。有用但跟 lore capture 沒直接關係，稀釋產品定位 |
+| `vein ask` | 功能幾乎跟 `vein recall` 重疊，造成混淆 |
+
+**決定：**
+- `vein walk`：保留功能（Rex 在用），但從 public docs / README 移出，標為 advanced/internal
+- `vein run` / `vein pipe`：同上，保留但不主推
+- `vein ask`：考慮 Phase 1 合併進 `vein recall`（`--natural-language` flag）
+- **Core 7 commands（對外主推）：** init, log, recall, brief, debrief, mcp, hooks
+
+**Why：**
+「能做 13 件事的工具」vs「把一件事做到極致的工具」——後者更容易讓陌生人在 5 分鐘內上手，符合 D-008 public flip 條件三。

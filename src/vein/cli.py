@@ -16,6 +16,9 @@ from .commands.recall import cmd_recall
 from .commands.walk import cmd_walk
 from .commands.reindex import cmd_reindex
 from .commands.run import cmd_run
+from .commands.debrief import cmd_debrief
+from .commands.hooks import cmd_hooks
+from .commands.mcp_server import cmd_mcp
 from .commands.status import cmd_status
 
 
@@ -35,6 +38,7 @@ def main() -> None:
       vein list --type pitfall           list entries
       vein reindex                       rebuild search index
       vein import docs/decisions.md      bulk-import existing docs
+      vein mcp                           start MCP server (Claude Desktop)
       vein run cargo check               run + auto-triage on failure
       cargo check 2>&1 | vein pipe       pipe error → triage
 
@@ -55,3 +59,6 @@ main.add_command(cmd_import,  name="import")
 main.add_command(cmd_pipe,    name="pipe")
 main.add_command(cmd_run,     name="run")
 main.add_command(cmd_walk,    name="walk")
+main.add_command(cmd_mcp,     name="mcp")
+main.add_command(cmd_debrief, name="debrief")
+main.add_command(cmd_hooks,   name="hooks")

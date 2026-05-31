@@ -1,0 +1,173 @@
+<svg viewBox="0 0 780 980" xmlns="http://www.w3.org/2000/svg" role="img" font-family="system-ui, -apple-system, sans-serif">
+  <title>Vein workflow diagrams</title>
+  <desc>Flow 1: Lode + Vein collaboration. Flow 2: Vein + AI session loop (Claude/Gemini).</desc>
+
+  <style>
+    :root { color-scheme: dark; }
+    @media (prefers-color-scheme: light) {
+      .bg    { fill: #f4f4f5; }
+      .card  { fill: #ffffff; stroke: #d4d4d8; }
+      .label { fill: #18181b; }
+      .sub   { fill: #71717a; }
+      .div   { stroke: #d4d4d8; }
+      .arr   { fill: #a1a1aa; }
+      .lode-card  { fill: #fffbeb; stroke: #b45309; }
+      .lode-text  { fill: #92400e; }
+      .lode-sub   { fill: #a16207; }
+      .vein-card  { fill: #f0fdf4; stroke: #16a34a; }
+      .vein-text  { fill: #15803d; }
+      .vein-sub   { fill: #166534; }
+      .cmd-card   { fill: #eef2ff; stroke: #6366f1; }
+      .cmd-text   { fill: #4338ca; }
+      .cmd-sub    { fill: #6366f1; }
+      .work-card  { fill: #fffbeb; stroke: #b45309; }
+      .work-text  { fill: #92400e; }
+      .ok-card    { fill: #f0fdf4; stroke: #16a34a; }
+      .ok-text    { fill: #15803d; }
+      .ok-sub     { fill: #166534; }
+      .section-lbl { fill: #71717a; }
+      .loop-line  { stroke: #d4d4d8; }
+      .loop-text  { fill: #a1a1aa; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .bg    { fill: #18181b; }
+      .card  { fill: #27272a; stroke: #3f3f46; }
+      .label { fill: #fafafa; }
+      .sub   { fill: #71717a; }
+      .div   { stroke: #3f3f46; }
+      .arr   { fill: #52525b; }
+      .lode-card  { fill: #1c1917; stroke: #b45309; }
+      .lode-text  { fill: #fbbf24; }
+      .lode-sub   { fill: #a8a29e; }
+      .vein-card  { fill: #14532d; stroke: #16a34a; }
+      .vein-text  { fill: #4ade80; }
+      .vein-sub   { fill: #86efac; }
+      .cmd-card   { fill: #1e1b4b; stroke: #6366f1; }
+      .cmd-text   { fill: #a5b4fc; }
+      .cmd-sub    { fill: #818cf8; }
+      .work-card  { fill: #1c1917; stroke: #b45309; }
+      .work-text  { fill: #fbbf24; }
+      .ok-card    { fill: #14532d; stroke: #16a34a; }
+      .ok-text    { fill: #4ade80; }
+      .ok-sub     { fill: #86efac; }
+      .section-lbl { fill: #a1a1aa; }
+      .loop-line  { stroke: #4f4f5a; }
+      .loop-text  { fill: #52525b; }
+    }
+  </style>
+
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" class="arr"/>
+    </marker>
+    <marker id="arr-dim" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" class="loop-line" style="fill:inherit"/>
+    </marker>
+  </defs>
+
+  <rect width="780" height="980" rx="12" class="bg"/>
+
+  <!-- ── FLOW 1 ──────────────────────────────────────── -->
+  <text x="390" y="36" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.2" class="section-lbl">FLOW 1 — LODE + VEIN</text>
+
+  <!-- Node: question -->
+  <rect x="240" y="50" width="300" height="46" rx="8" class="card" stroke-width="1.2"/>
+  <text x="390" y="68" text-anchor="middle" font-size="13" font-weight="600" class="label">Developer has a question</text>
+  <text x="390" y="86" text-anchor="middle" font-size="11" class="sub">"why does this code look like this?"</text>
+
+  <!-- Branch lines -->
+  <path d="M390 96 L390 110 L200 110 L200 120" fill="none" stroke-width="1.5" class="arr" marker-end="url(#arr)" style="stroke:#52525b"/>
+  <path d="M390 96 L390 110 L580 110 L580 120" fill="none" stroke-width="1.5" class="arr" marker-end="url(#arr)" style="stroke:#52525b"/>
+  <text x="288" y="108" text-anchor="middle" font-size="10" class="sub">finds the code</text>
+  <text x="493" y="108" text-anchor="middle" font-size="10" class="sub">remembers the why</text>
+
+  <!-- Lode box -->
+  <rect x="90" y="120" width="220" height="50" rx="8" class="lode-card" stroke-width="1.5"/>
+  <text x="200" y="141" text-anchor="middle" font-size="13" font-weight="700" class="lode-text">📦 Lode</text>
+  <text x="200" y="159" text-anchor="middle" font-size="11" class="lode-sub">Browse · Diff · Search code</text>
+
+  <!-- Vein box -->
+  <rect x="470" y="120" width="220" height="50" rx="8" class="vein-card" stroke-width="1.5"/>
+  <text x="580" y="141" text-anchor="middle" font-size="13" font-weight="700" class="vein-text">🌿 Vein</text>
+  <text x="580" y="159" text-anchor="middle" font-size="11" class="vein-sub">vein recall "…"</text>
+
+  <line x1="200" y1="170" x2="200" y2="198" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="580" y1="170" x2="580" y2="198" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Lode result -->
+  <rect x="80" y="198" width="240" height="46" rx="8" class="card" stroke-width="1.2"/>
+  <text x="200" y="217" text-anchor="middle" font-size="12" class="label">Spot decision point or bug</text>
+  <text x="200" y="234" text-anchor="middle" font-size="11" class="sub">while viewing code in Lode</text>
+
+  <!-- Vein result -->
+  <rect x="460" y="198" width="240" height="46" rx="8" class="card" stroke-width="1.2"/>
+  <text x="580" y="217" text-anchor="middle" font-size="12" class="label">vein recall "sqlite"</text>
+  <text x="580" y="234" text-anchor="middle" font-size="11" class="sub">→ instant answer, no grep</text>
+
+  <line x1="200" y1="244" x2="200" y2="272" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- vein log -->
+  <rect x="80" y="272" width="240" height="50" rx="8" class="cmd-card" stroke-width="1.5"/>
+  <text x="200" y="292" text-anchor="middle" font-size="12" font-weight="600" class="cmd-text">vein log decision / lore / pitfall</text>
+  <text x="200" y="309" text-anchor="middle" font-size="11" class="cmd-sub">one-line capture</text>
+
+  <line x1="200" y1="322" x2="200" y2="350" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- .vein/ entry -->
+  <rect x="80" y="350" width="240" height="46" rx="8" class="card" stroke-width="1.2"/>
+  <text x="200" y="369" text-anchor="middle" font-size="12" class="label">.vein/ entry created</text>
+  <text x="200" y="386" text-anchor="middle" font-size="11" class="sub">polished by local AI (ollama)</text>
+
+  <!-- Merge to answer -->
+  <path d="M200 396 L200 424 L390 424" fill="none" stroke="#52525b" stroke-width="1.5"/>
+  <path d="M580 244 L580 424 L390 424" fill="none" stroke="#52525b" stroke-width="1.5"/>
+  <line x1="390" y1="424" x2="390" y2="448" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Answer -->
+  <rect x="190" y="448" width="400" height="46" rx="8" class="ok-card" stroke-width="1.5"/>
+  <text x="390" y="467" text-anchor="middle" font-size="13" font-weight="700" class="ok-text">✅ Question answered</text>
+  <text x="390" y="484" text-anchor="middle" font-size="11" class="ok-sub">Lode shows the code · Vein explains the why</text>
+
+  <!-- Divider -->
+  <line x1="40" y1="516" x2="740" y2="516" stroke-width="1" stroke-dasharray="4,4" class="div"/>
+
+  <!-- ── FLOW 2 ──────────────────────────────────────── -->
+  <text x="390" y="544" text-anchor="middle" font-size="12" font-weight="700" letter-spacing="1.2" class="section-lbl">FLOW 2 — VEIN + AI SESSION (CLAUDE / GEMINI)</text>
+
+  <!-- New session -->
+  <rect x="240" y="556" width="300" height="46" rx="8" class="card" stroke-width="1.2"/>
+  <text x="390" y="575" text-anchor="middle" font-size="13" font-weight="600" class="label">New AI session starts</text>
+  <text x="390" y="592" text-anchor="middle" font-size="11" class="sub">Claude · Gemini · GPT · Cursor</text>
+
+  <line x1="390" y1="602" x2="390" y2="628" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- vein brief -->
+  <rect x="240" y="628" width="300" height="46" rx="8" class="cmd-card" stroke-width="1.5"/>
+  <text x="390" y="647" text-anchor="middle" font-size="13" font-weight="600" class="cmd-text">vein brief</text>
+  <text x="390" y="664" text-anchor="middle" font-size="11" class="cmd-sub">&lt;800 token session primer</text>
+
+  <line x1="390" y1="674" x2="390" y2="700" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Paste → oriented -->
+  <rect x="190" y="700" width="400" height="46" rx="8" class="card" stroke-width="1.2"/>
+  <text x="390" y="719" text-anchor="middle" font-size="12" class="label">Paste primer → AI is oriented</text>
+  <text x="390" y="736" text-anchor="middle" font-size="11" class="sub">No re-explaining. No re-loading. No tax.</text>
+
+  <line x1="390" y1="746" x2="390" y2="772" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Work session -->
+  <rect x="200" y="772" width="380" height="46" rx="8" class="work-card" stroke-width="1.5"/>
+  <text x="390" y="791" text-anchor="middle" font-size="13" font-weight="600" class="work-text">🔧 Work session</text>
+  <text x="390" y="808" text-anchor="middle" font-size="11" class="lode-sub">decisions made · bugs fixed · quirks found</text>
+
+  <line x1="390" y1="818" x2="390" y2="844" stroke="#52525b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- vein log -->
+  <rect x="240" y="844" width="300" height="46" rx="8" class="cmd-card" stroke-width="1.5"/>
+  <text x="390" y="863" text-anchor="middle" font-size="12" font-weight="600" class="cmd-text">vein log — capture the knowledge</text>
+  <text x="390" y="880" text-anchor="middle" font-size="11" class="cmd-sub">.vein/ updated · committed to git</text>
+
+  <!-- Loop arrow -->
+  <path d="M540 867 L700 867 L700 579 L540 579" fill="none" stroke-width="1.5" stroke-dasharray="5,3" class="loop-line" style="stroke:#4f4f5a" marker-end="url(#arr)"/>
+  <text x="716" y="730" text-anchor="middle" font-size="10" class="loop-text" transform="rotate(-90 716 730)">next session</text>
+</svg>
