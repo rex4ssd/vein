@@ -2,19 +2,22 @@
 """
 import_lode_lore_addendum.py — 補漏 5 條 (第二批)
 
+寫進 Vein 自己的 .vein/（cross-project lore，不放在 Lode repo）。
+
 使用方式：
-  cd /Users/lion/Documents/lode
   python3 /Users/lion/Documents/vein/shell/import_lode_lore_addendum.py
 """
 
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+VEIN_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(VEIN_ROOT / "src"))
 
 from vein.core.store import VeinStore
 from vein.core.models import Entry
 
-store = VeinStore.require()
+store = VeinStore(VEIN_ROOT)
 print(f"Writing to: {store.vein_dir}\n")
 
 ENTRIES = [

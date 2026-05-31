@@ -431,3 +431,58 @@
 4. **順手：去 GitHub 註冊 `lodevein` org（5 分鐘事，越早越好）**
 
 **Time spent:** 0.1 session（D-008 + S3 收尾 + Phase 0 checklist 更新，無 code）
+
+---
+
+## Session 0.12 — 2026-05-31 — MCP server + debrief + hooks + cross-project lore
+
+**What:**
+
+### Code（新 command × 3）
+- `vein mcp`：FastMCP server，4 tools（vein_brief / vein_recall / vein_log / vein_status）。Claude Desktop / Claude Code config 一行接入，AI 自動呼叫不需 user 打指令
+- `vein debrief`：post-commit AI diff 掃描 → 自動提取 decisions/lore/pitfalls。有 ollama 就跑，無則 graceful skip。解決「自動 = 雜訊多、手動 = 沒人做」的核心矛盾
+- `vein hooks install/remove/status`：pure Python 管理 git post-commit hook，zero deps，hook 內容改為 `vein debrief --silent`（取代原本互動式 d/l/p prompt）
+
+### Bug fixes（code review pass）
+- `hooks remove()`：skip loop 從未 reset → 改用 string replace，appended hook 搬移正確
+- `hooks install`：success 訊息還在說舊的 d/l/p prompt → 更正
+- `debrief _get_diff()`：第一次 commit 時 HEAD~1 不存在（exit 128）→ fallback to `git show HEAD`
+- `debrief _call_ollama_debrief()`：model 回傳 `{}` 被當成「ollama unavailable」→ 改為「nothing found」，連線失敗才是 None
+- `mcp_setup.md`：Claude Code 路徑不對（`~/.claude.json` + `.claude/settings.local.json`）、pip 指令有誤 → 修正
+
+### Cross-project lore 架構
+- **設計決定**：cross-project lore 放 Vein 自身 `.vein/`，不放各 source project repo
+- **Tagging convention**：`tags[0] = project:xxx`（永遠第一個），`tags[1+]` = 領域標籤
+- **Lode 2 個月 App Store 上架經驗** → 24 條 lore（5 decision + 16 pitfall + 3 lore），covering：
+  - Apple App Store：submission flow、4 次 rejection 原因、Sandbox/SSB 改造、notarize SOP
+  - Cloudflare Pages：CAS stuck-state、Worker 1MB limit、static asset priority、env var Retry
+  - SEO：robots.txt / sitemap / GSC DNS TXT / HTML cache
+- `shell/migrate_lode_to_vein.py`：搬移 + 加 project:xxx tag
+- `shell/import_lode_lore.py` + `addendum.py`：目標路徑改為 Vein .vein/（不再需要 cd 到 source project）
+
+### Marketing Materials
+- `Marketing_Materials/`：overview / features / vs_alternatives / social_posts / flowcharts.md / flowcharts.svg
+- 更新：MCP server 從 "planned" → live；vein debrief 取代 vein ask；docs_cloudflare 同步更新
+
+### Strategy（D-027/028/029）
+- D-027：capture hierarchy — debrief > MCP > hooks > manual
+- D-028：multi-agent 定位 — .vein/ 是 AI-agnostic shared memory layer
+- D-029：scope 縮焦 — walk/run/pipe 降級，core 7 commands 對外主推
+
+**Files changed:**
+- `src/vein/commands/` 加 mcp_server.py / debrief.py / hooks.py
+- `src/vein/cli.py` 加 mcp / debrief / hooks command
+- `pyproject.toml` mcp 移入 base deps
+- `docs/mcp_setup.md`（新）
+- `docs/decisions.md` D-027 / D-028 / D-029
+- `Marketing_Materials/` 全套（7 檔）
+- `shell/` 3 個 import/migrate 腳本
+- `CLAUDE.md` §1/§3/§5 更新
+
+**Next session entry point:**
+1. `README.md` 補完（陌生人 5 分鐘可上手，public flip 條件 3）
+2. `vein init` 時加互動問是否裝 hooks（降低 onboarding 摩擦）
+3. PyPI + Homebrew tap 上架
+4. 多跑幾次 `vein debrief` 驗 ollama 品質
+
+**Time spent:** 1 full session（code + review + marketing + strategy + lore migration）

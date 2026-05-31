@@ -2,24 +2,29 @@
 """
 import_lode_lore.py
 
-在 Lode app repo 建立 .vein/ 知識庫。
-從 2 個月 App Store 上架經驗提取 19 條 lore。
+Lode 2 個月 App Store 上架經驗 → 寫進 Vein 自己的 .vein/（cross-project lore）。
+
+Tagging convention:
+  tags[0] = project:lode   ← 永遠第一個，標明來源專案
+  tags[1+] = 領域標籤       ← apple-store / cloudflare / seo ...
 
 使用方式：
-  cd /Users/lion/Documents/lode
-  vein init              # 如果還沒建
   python3 /Users/lion/Documents/vein/shell/import_lode_lore.py
+  # 直接寫進 /Users/lion/Documents/vein/.vein/，不需要 cd 到 lode
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+VEIN_ROOT = Path(__file__).parent.parent          # /Users/lion/Documents/vein
+sys.path.insert(0, str(VEIN_ROOT / "src"))
 
 from vein.core.store import VeinStore
 from vein.core.models import Entry
 
-store = VeinStore.require()
+store = VeinStore(VEIN_ROOT)
+if not (VEIN_ROOT / ".vein").exists():
+    store.init(name="vein")
 print(f"Writing to: {store.vein_dir}\n")
 
 ENTRIES = [

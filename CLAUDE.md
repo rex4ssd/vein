@@ -12,7 +12,7 @@ CLI + (未來) MCP server。Local-first，**markdown-based**，git-friendly。
 - **Family marketing 名：** Lode Vein（對外講話 / blog / homepage 用）
 - **Split naming：** CLI = `vein`、PyPI = `lode-vein`、GitHub = `rex4ssd/vein`、Homebrew = `vein` via `rex4ssd/tap`
 - **位置：** `/Users/lion/Documents/vein/`
-- **狀態：** Phase 0 進行中（CLI skeleton 已可跑：init/log/recall/status/ask/list/brief/reindex/import/run/pipe/walk 共 11+ command，core 9 module，`pytest` 32 passed。已 dogfood on Lode `.vein/`（13 entries）+ Vein 自身 `.vein/`。embedding/polish 需本機 ollama，FTS5 recall 無 ollama 可獨立運作）
+- **狀態：** Phase 0 進行中（CLI 14 command 可跑：init/log/recall/brief/debrief/status/ask/list/reindex/import/mcp/hooks/run/pipe/walk。core 9 module，`pytest` 32 passed。MCP server 已上線（FastMCP，4 tools）。vein debrief 已接 ollama 自動捕獲。`.vein/` cross-project lore：Vein 自身 + Lode 2 個月 App Store 經驗共 40+ entries）
 - **Positioning：** Path D — decision lore niche，**不是** code RAG broker（避開 7+ 競品紅海）
 - **Stack 預定：** Python 3.11+、Click（CLI）、ollama HTTP API、sqlite-vec、(後續) MCP SDK
 - **License 預定：** MIT（OSS 友善）
@@ -33,27 +33,30 @@ Vein 解法：把專案的 **decision & debug lore** 存進 `.vein/`（像 `.git
 
 ## 3. Phase 0 scope（Path D 形態）
 
-- [x] CLI skeleton: `vein init / log / recall / status`（+ ask/list/brief/reindex/import/run/pipe/walk）
+- [x] CLI skeleton: `vein init / log / recall / brief / status`（+ ask/list/reindex/import/run/pipe/walk）
 - [x] `.vein/` schema 設計與實作（decisions/ + lore/ + pitfalls/ + references/，YAML frontmatter + typed body）
-- [~] ollama integration（embed/polish 已接 ollama HTTP；無 ollama 時 recall graceful degrade 到 FTS5）
+- [x] ollama integration（embed/polish/debrief 已接 ollama HTTP；無 ollama 時 graceful degrade 到 FTS5）
+- [x] **MCP server**（`vein mcp`，FastMCP，4 tools：vein_brief / vein_recall / vein_log / vein_status）
+- [x] **vein debrief**（post-commit AI diff 掃描，自動提取 decisions/lore/pitfalls，有 ollama 跑，無則 skip）
+- [x] **vein hooks**（install / remove / status，pure Python，zero deps，post-commit 自動跑 debrief）
+- [x] **Cross-project lore**（Vein .vein/ 作為 central lore store；tagging convention：project:xxx 為 tag[0]）
+- [x] **Lode 2 個月上架經驗** → 24 條 lore 進 Vein .vein/（app-store / cloudflare / notarize / seo）
 - [ ] Lode v0.2 整合「Send to vein」按鈕（從 diff 抓 decision/lore）
-- [~] dogfood on Lode：`.vein/` 已建 13 entries；目標「一個月、≥10 條」其中 entry 數已達標，續驗 recall 工作流
+- [~] dogfood on Lode：`.vein/` 已建 entries；cross-project recall via `vein recall -x` 驗通
 
 **Visibility（D-008）：** **private repo `rex4ssd/vein` 現在**，三條件達成後 flip public：
-1. `vein init` + `vein log` + `vein recall` 能跑
-2. Dogfood on Lode ≥ 2 週、≥ 10 條 entries
-3. README / docs_cloudflare 完整、陌生人 5 分鐘可上手
+1. ✅ `vein init` + `vein log` + `vein recall` 能跑
+2. ✅ Dogfood on Lode ≥ 2 週、≥ 10 條 entries
+3. [ ] README / docs_cloudflare 完整、陌生人 5 分鐘可上手
 
 **順手做（Phase 0 checklist）：**
 - [ ] 註冊 `lodevein` GitHub org（namespace 保留）
 - [ ] 測試 `vein.dev` / `vein.app` domain availability
 
 **不做（明確 out-of-scope）：**
-- MCP server（Phase 0.3）
 - web UI（Phase 0.4）
-- multi-project sync
+- multi-project sync（已有 `-x` cross-project search 作為輕量替代）
 - framework / SDK 抽象
-- 任何「給別人用」的 polish（先自用）
 
 ## 4. 工作原則（給接手的 Claude）
 
@@ -107,8 +110,30 @@ vein/
     why.md                     ← problem / 我們的解 / vs 競品
     features.md                ← 功能列表（placeholder，等 code）
     install.md                 ← Get started（placeholder，等 code）
-  src/                         ← (Phase 0 開始寫 Python package)
-  .vein/                       ← (dogfood 自己建)
+  src/
+    vein/
+      commands/
+        log.py / recall.py / brief.py / debrief.py  ← core capture/retrieve
+        mcp_server.py           ← FastMCP server（4 tools）
+        hooks.py                ← git hook 管理（install/remove/status）
+        ask.py / list_cmd.py / reindex.py / import_cmd.py / status.py
+        run.py / pipe.py / walk.py  ← advanced/internal
+      core/
+        store.py / models.py / brief.py / polish.py / embed.py
+        index.py / config.py / registry.py / triage.py / workflow.py
+  Marketing_Materials/          ← 對外行銷素材（overview/features/vs/social/flowcharts）
+  shell/                        ← 工具腳本
+    import_lode_lore.py         ← Lode App Store lore → Vein .vein/
+    import_lode_lore_addendum.py← 補漏 5 條
+    migrate_lode_to_vein.py     ← 搬移 + project:xxx tag
+  docs/
+    mcp_setup.md                ← Claude Desktop / Claude Code MCP 設定指南
+    decisions.md                ← D-001~D-029（含 debrief/multi-agent/scope 決策）
+  docs_cloudflare/              ← 公開網站內容（已更新：MCP live、debrief live）
+  .vein/                        ← cross-project lore central store
+    decisions/                  ← project:vein（架構決策）+ project:lode（App Store 決策）
+    pitfalls/                   ← project:lode（CF / notarize / App Store 踩雷）
+    lore/                       ← project:lode（上架 checklist / spctl 指令）
 ```
 
 **內部 vs 公開 docs 分工：**
