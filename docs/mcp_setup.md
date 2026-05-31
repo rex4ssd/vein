@@ -18,12 +18,12 @@ pip install lode-vein
     "vein-lode": {
       "command": "vein",
       "args": ["mcp"],
-      "cwd": "/Users/lion/Documents/lode"
+      "cwd": "/path/to/your/project"
     },
     "vein-vein": {
       "command": "vein",
       "args": ["mcp"],
-      "cwd": "/Users/lion/Documents/vein"
+      "cwd": "/path/to/vein"
     }
   }
 }
@@ -45,7 +45,7 @@ Global（所有專案）：編輯 `~/.claude.json`，加入 `mcpServers`：
     "vein-lode": {
       "command": "vein",
       "args": ["mcp"],
-      "cwd": "/Users/lion/Documents/lode"
+      "cwd": "/path/to/your/project"
     }
   }
 }

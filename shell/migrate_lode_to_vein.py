@@ -6,10 +6,10 @@ migrate_lode_to_vein.py
 搬到 Vein 自己的 .vein/，並加上 project:lode tag。
 
 使用方式：
-  python3 /Users/lion/Documents/vein/shell/migrate_lode_to_vein.py
+  python3 /path/to/vein/shell/migrate_lode_to_vein.py
 
 執行後：
-  1. 24 條 lore 進 /Users/lion/Documents/vein/.vein/
+  1. lore 進 vein/.vein/
   2. Lode .vein/ 的這些 entries 被移除
   3. vein reindex (在 vein 目錄) 讓 FTS 更新
 """
@@ -25,8 +25,9 @@ sys.path.insert(0, str(VEIN_SRC))
 from vein.core.store import VeinStore
 from vein.core.models import Entry
 
-LODE_VEIN_DIR  = Path("/Users/lion/Documents/lode/.vein")
-VEIN_VEIN_DIR  = Path("/Users/lion/Documents/vein")
+# ── paths: update these for your own setup ───────────────────────────────────
+LODE_VEIN_DIR  = Path.home() / "Documents" / "lode" / ".vein"   # source project
+VEIN_VEIN_DIR  = Path(__file__).parent.parent                    # vein root (auto)
 
 SOURCES_TO_MIGRATE = {
     "lode-retrospective-2026",
@@ -133,7 +134,7 @@ def main():
             print(f"  rm {f.relative_to(LODE_VEIN_DIR.parent)}")
 
     print("\nDone. Next steps:")
-    print("  cd /Users/lion/Documents/vein && vein reindex")
+    print(f"  cd {VEIN_VEIN_DIR} && vein reindex")
     print("  vein recall 'project:lode app store'")
     print("  vein recall 'cloudflare'")
 

@@ -7,10 +7,10 @@ Usage:
 Claude Desktop config (~/.claude.json or claude_desktop_config.json):
   {
     "mcpServers": {
-      "vein-lode": {
+      "vein-myproject": {
         "command": "vein",
         "args": ["mcp"],
-        "cwd": "/Users/lion/Documents/lode"
+        "cwd": "/path/to/your/project"
       }
     }
   }
