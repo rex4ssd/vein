@@ -1,43 +1,43 @@
 # Features
 
-> *Placeholder — Phase 0 階段，core commands 在 spec/v0.1.md 還沒改寫為 Path D 形態。等 code 開始才能 polish。*
-
 ## Core CLI
 
 ```bash
 vein init                          # Initialize .vein/ in current repo
-vein log decision "..."            # Capture an architectural decision
-vein log lore "..."                # Capture debug lore / API quirk / workaround
-vein log refactor "..."            # Capture what you tried and learned
+vein log decision "why X not Y"    # Capture an architectural decision
+vein log lore "API quirk..."       # Capture debug lore / workaround
+vein log pitfall "don't do X..."   # Capture a pitfall
 
-vein recall "<query>"              # Retrieval: find related decisions
-vein review --since 7d             # Weekly summary of what was captured
+vein recall "<query>"              # Semantic + full-text search
+vein brief                         # Session primer — paste into any AI
 
-vein link --to-file <path:line>    # Attach a file:line anchor to last entry
+vein debrief                       # Auto-extract decisions from last git diff
+vein hooks install                 # Install post-commit hook (runs debrief silently)
 
-vein status                        # Show .vein/ state
+vein status                        # Show .vein/ stats
+vein import docs/decisions.md      # Bulk-import existing docs
 ```
 
-## MCP integration *(planned, Phase 0.3)*
+## MCP Server
 
 ```json
 {
   "mcpServers": {
-    "vein": {
+    "vein-myproject": {
       "command": "vein",
-      "args": ["serve"]
+      "args": ["mcp"],
+      "cwd": "/path/to/your/project"
     }
   }
 }
 ```
 
-Exposes tools:
+Four tools available to any MCP client (Claude Desktop, Claude Code, Cursor, Cline):
 
-- `recall` — semantic search over decisions + lore
-- `surface` — given a file:line, return related decisions
-- `digest` — get a brief summary of the project's lore
-
-Works with Claude Desktop, Claude Code, Cursor, any MCP-compatible client.
+- `vein_brief()` — session orientation primer
+- `vein_recall(query)` — semantic search over lore
+- `vein_log(type, message)` — capture a decision in the moment
+- `vein_status()` — project name + entry counts
 
 ## Lode integration *(planned, Phase 0.2)*
 

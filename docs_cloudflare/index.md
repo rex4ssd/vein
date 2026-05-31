@@ -28,8 +28,9 @@ A small CLI that captures and surfaces:
 
 Stored as plain markdown in `.vein/`, indexed locally for retrieval via:
 
-- **CLI**: `vein log "..."` / `vein recall "..."` / `vein review`
-- **MCP server** (planned): any MCP client (Claude Desktop, Cursor, Cline) can query your decision history as a tool
+- **CLI**: `vein log "..."` / `vein recall "..."` / `vein brief`
+- **MCP server** (`vein mcp`): any MCP client (Claude Desktop, Cursor, Cline) can query your decision history as a tool
+- **Auto-capture** (`vein debrief`): post-commit hook extracts decisions from git diff via local AI
 
 ---
 

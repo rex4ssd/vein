@@ -70,15 +70,15 @@ def _get_diff(since: str) -> str | None:
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode != 0:
-            return None
-        diff = result.stdout.strip()
-        if not diff:
-            # also try staged/committed
-            result2 = subprocess.run(
-                ["git", "show", "--stat", since.replace("~", "~").split("~")[0]],
+            # HEAD~1 fails on first commit (only 1 commit in repo) — fallback to show HEAD
+            result = subprocess.run(
+                ["git", "show", "HEAD", "--", ".", ":(exclude).vein"],
                 capture_output=True, text=True, timeout=10,
             )
-            diff = result2.stdout.strip()
+            if result.returncode != 0:
+                return None
+
+        diff = result.stdout.strip()
         return diff or None
     except Exception:
         return None

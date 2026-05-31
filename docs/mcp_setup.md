@@ -3,7 +3,7 @@
 ## 安裝
 
 ```bash
-pip install 'lode-vein[mcp]'
+pip install lode-vein
 ```
 
 ---
@@ -35,9 +35,23 @@ pip install 'lode-vein[mcp]'
 
 ---
 
-## Claude Code / Cowork 設定
+## Claude Code 設定
 
-在專案的 `.claude/settings.json`（或 global `~/.claude/settings.json`）：
+Global（所有專案）：編輯 `~/.claude.json`，加入 `mcpServers`：
+
+```json
+{
+  "mcpServers": {
+    "vein-lode": {
+      "command": "vein",
+      "args": ["mcp"],
+      "cwd": "/Users/lion/Documents/lode"
+    }
+  }
+}
+```
+
+或 per-project：在專案根目錄建 `.claude/settings.local.json`（不 commit）：
 
 ```json
 {
@@ -50,7 +64,7 @@ pip install 'lode-vein[mcp]'
 }
 ```
 
-Claude Code 會用 project root 當 cwd，自動找到 `.vein/`。
+Claude Code 用 invocation directory 當 cwd，自動找到 `.vein/`。
 
 ---
 
@@ -91,7 +105,7 @@ call vein_status
 ## Troubleshooting
 
 **`MCP package not installed`**
-→ `pip install 'lode-vein[mcp]'`
+→ `pip install lode-vein`（mcp 已在 base deps）
 
 **`No .vein/ found`**
 → 在專案 root 跑 `vein init`，或確認 `cwd` 設對了

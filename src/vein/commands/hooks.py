@@ -102,7 +102,7 @@ def hooks_install(yes: bool) -> None:
     proj_root = git_dir.parent
     console.print(
         f"\n  Project: [cyan]{proj_root}[/]\n"
-        f"  Next commit will prompt: [dim]d / l / p / Enter=skip[/]"
+        f"  After each commit: [dim]vein debrief --silent[/] runs automatically"
     )
 
 
@@ -124,22 +124,13 @@ def hooks_remove() -> None:
         console.print("[yellow]No vein block found in hook.[/] Nothing removed.")
         return
 
-    # strip vein block
-    lines = content.splitlines(keepends=True)
-    out, skip = [], False
-    for line in lines:
-        if _VEIN_MARKER in line:
-            skip = True
-        if not skip:
-            out.append(line)
-        # stop skipping after the empty line following esac
-        if skip and line.strip() == "":
-            pass  # keep skipping until we hit next non-vein content
+    # strip vein block — use string replace (loop-based skip never resets correctly)
+    # handles both: vein-only file and vein appended to existing hook
+    cleaned = content.replace("\n" + _HOOK_SCRIPT, "").replace(_HOOK_SCRIPT, "")
+    cleaned = cleaned.rstrip("\n") + "\n"
 
-    cleaned = "".join(out).rstrip("\n") + "\n"
-
-    if cleaned.strip() in ("#!/usr/bin/env bash", ""):
-        # nothing left but the shebang — delete the file
+    remaining = cleaned.strip()
+    if remaining in ("", "#!/usr/bin/env bash"):
         hook_path.unlink()
         console.print(f"[green]✓ Removed[/] {hook_path}")
     else:

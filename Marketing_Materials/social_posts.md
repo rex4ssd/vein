@@ -148,7 +148,7 @@ Key properties:
 - Committed to git. Clone the repo, get the memory.
 - Works with any AI tool (Claude, Gemini, Cursor, local models).
 - FTS5 recall offline; local ollama for semantic search.
-- MCP server planned (Phase 0.3) so any MCP client can query .vein/ directly.
+- MCP server (`vein mcp`) — any MCP client (Claude Desktop, Cursor, Cline) can query .vein/ directly.
 
 We've been dogfooding it on two projects (~13 entries). The test that convinced 
 us it works: starting a session with `vein brief` instead of pasting docs/ — 

@@ -126,8 +126,8 @@ Vein is not the right tool for throwaway scripts, weekend projects, or anything 
 
 ## Current status
 
-Vein is in early development (Phase 0 — dogfood). The CLI is not yet available.
+Vein is in early access (Phase 0 — dogfood). Core CLI is working: `vein init`, `vein log`, `vein recall`, `vein brief`, `vein debrief`, `vein mcp`.
 
 Watch the repo: [github.com/rex4ssd/vein](https://github.com/rex4ssd/vein)
 
-The repo is currently private. It will open once `vein init`, `vein log`, and `vein recall` are working and have been used on a real project for at least two weeks.
+The repo is currently private while dogfood validation completes. It will open once the CLI has been used on a real project for at least two weeks.

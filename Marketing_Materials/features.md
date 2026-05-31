@@ -40,21 +40,16 @@ Paste into any AI session. Your LLM is oriented in seconds, not minutes.
 
 ---
 
-### `vein ask` — Natural language Q&A over your lore
+### `vein debrief` — Auto-capture from git diff
 ```bash
-vein ask "why does the DMA API use callbacks?"
+vein debrief              # scan last commit, extract decisions
+vein debrief --since HEAD~5   # last 5 commits
+vein debrief --dry-run    # preview without writing
 ```
-Queries your `.vein/` archive and returns the matching entry.
-Works with local ollama or a connected MCP client.
+After every commit, local AI (ollama) scans the diff and auto-logs decisions worth keeping.
+If ollama is unavailable or finds nothing, exits silently. No interruption to workflow.
 
----
-
-### `vein review` — Weekly lore digest
-```bash
-vein review --since 7d
-```
-What decisions did you make this week? What pitfalls did you hit?
-Good for weekly retros, onboarding new teammates, or auditing AI-assisted work.
+Install as post-commit hook with `vein hooks install` — runs automatically after each commit.
 
 ---
 
@@ -95,17 +90,30 @@ Any editor can read it. Any AI can consume it. No proprietary format.
 
 ---
 
-## Planned: MCP Server (Phase 0.3)
+## MCP Server — Any AI, Zero Extra Commands
 
-Any MCP client — Claude Desktop, Cursor, Cline — will be able to query your `.vein/` directly as a tool call.
+`vein mcp` starts a local MCP server. Add one entry to your Claude Desktop or Claude Code config:
 
-```
-// Claude Desktop config
-"vein": {
-  "command": "vein",
-  "args": ["mcp"]
+```json
+{
+  "mcpServers": {
+    "vein-myproject": {
+      "command": "vein",
+      "args": ["mcp"],
+      "cwd": "/path/to/your/project"
+    }
+  }
 }
 ```
+
+Four tools available to any MCP client — Claude Desktop, Cursor, Cline, Claude Code:
+
+| Tool | What it does |
+|------|-------------|
+| `vein_brief()` | Session primer — call at start of every session |
+| `vein_recall(query)` | Search lore before making changes |
+| `vein_log(type, message)` | Capture a decision in the moment |
+| `vein_status()` | Project name + entry counts |
 
 Your lore becomes a live tool in any AI workspace. No copy-paste, no manual briefs.
 
