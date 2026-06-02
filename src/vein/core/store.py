@@ -213,6 +213,37 @@ class VeinStore:
             entries = entries[:limit]
         return entries
 
+    # ── delete ───────────────────────────────────────────────────
+
+    def delete_entry(self, entry: Entry) -> bool:
+        """Delete an entry's .md file and remove it from the index.
+
+        Returns True if the file existed and was deleted.
+        Safe to call with an entry whose _path is None or already gone.
+        """
+        path = entry._path
+        if path is None:
+            # try to reconstruct path from id + type
+            subdir = ENTRY_DIRS.get(entry.type, "lore")
+            path = self.vein_dir / subdir / f"{entry.id}.md"
+
+        deleted = False
+        if path and path.exists():
+            path.unlink()
+            deleted = True
+
+        # remove from search index (best-effort)
+        try:
+            idx = self.open_index()
+            idx.remove(entry.id)
+            idx.close()
+        except Exception:
+            pass
+
+        if deleted:
+            self._invalidate_brief()
+        return deleted
+
     # ── stats ─────────────────────────────────────────────────────
 
     def stats(self) -> dict[str, int]:

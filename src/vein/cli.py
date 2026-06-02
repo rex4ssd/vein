@@ -17,6 +17,10 @@ from .commands.walk import cmd_walk
 from .commands.reindex import cmd_reindex
 from .commands.run import cmd_run
 from .commands.debrief import cmd_debrief
+from .commands.fetch import cmd_fetch
+from .commands.gc import cmd_gc
+from .commands.harvest import cmd_night_harvest, cmd_morning
+from .commands.study import cmd_study
 from .commands.hooks import cmd_hooks
 from .commands.mcp_server import cmd_mcp
 from .commands.status import cmd_status
@@ -38,6 +42,13 @@ def main() -> None:
       vein list --type pitfall           list entries
       vein reindex                       rebuild search index
       vein import docs/decisions.md      bulk-import existing docs
+      vein fetch owner/repo              fetch GitHub repo insights → .vein/
+      vein study fetch NAME repo...      batch-fetch into a named collection
+      vein study compare NAME            compare repos in a collection
+      vein study watchlist add NAME repo add repo to nightly watchlist
+      vein night-harvest                 nightly pipeline (watchlist+debrief+brief)
+      vein morning                       print today's morning brief (<100 lines)
+      vein gc --collection NAME          delete raw entries after analysis
       vein mcp                           start MCP server (Claude Desktop)
       vein run cargo check               run + auto-triage on failure
       cargo check 2>&1 | vein pipe       pipe error → triage
@@ -60,5 +71,10 @@ main.add_command(cmd_pipe,    name="pipe")
 main.add_command(cmd_run,     name="run")
 main.add_command(cmd_walk,    name="walk")
 main.add_command(cmd_mcp,     name="mcp")
-main.add_command(cmd_debrief, name="debrief")
-main.add_command(cmd_hooks,   name="hooks")
+main.add_command(cmd_debrief,       name="debrief")
+main.add_command(cmd_fetch,         name="fetch")
+main.add_command(cmd_gc,            name="gc")
+main.add_command(cmd_night_harvest, name="night-harvest")
+main.add_command(cmd_morning,       name="morning")
+main.add_command(cmd_study,         name="study")
+main.add_command(cmd_hooks,         name="hooks")
