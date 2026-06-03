@@ -127,7 +127,7 @@ vein/
     import_lode_lore_addendum.py← 補漏 5 條
     migrate_lode_to_vein.py     ← 搬移 + project:xxx tag
   docs/
-    mcp_setup.md                ← Claude Desktop / Claude Code MCP 設定指南
+    usage.md                    ← 唯一使用指南（CLI + MCP 三介面 + 維護腳本）
     decisions.md                ← D-001~D-029（含 debrief/multi-agent/scope 決策）
   docs_cloudflare/              ← 公開網站內容（已更新：MCP live、debrief live）
   .vein/                        ← cross-project lore central store

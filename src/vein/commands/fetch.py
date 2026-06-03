@@ -245,6 +245,8 @@ def _readme_fallback(files: list[Path], slug: str) -> list[dict]:
               help="Override ollama model (e.g. deepseek-r1:14b)")
 @click.option("--verbose", "-v", is_flag=True,
               help="Show raw ollama response (debug)")
+@click.option("--force", "-f", is_flag=True,
+              help="Re-fetch even if this repo was already fetched (overwrites existing entries)")
 def cmd_fetch(
     source: str,
     dry_run: bool,
@@ -253,6 +255,7 @@ def cmd_fetch(
     max_files: int,
     model: str,
     verbose: bool,
+    force: bool,
 ) -> None:
     """Fetch a GitHub repo and extract key insights into .vein/references/.
 
@@ -264,6 +267,7 @@ def cmd_fetch(
       vein fetch https://github.com/BerriAI/litellm
       vein fetch tiangolo/fastapi --dry-run
       vein fetch simonw/llm --tag ai-tools --tag python
+      vein fetch simonw/llm --force          re-fetch and overwrite existing entries
     """
     store = VeinStore.require()
     cfg = store.load_config()
@@ -283,6 +287,32 @@ def cmd_fetch(
         raise SystemExit(1)
 
     github_url = clone_url.removesuffix(".git")
+
+    # ── dedup check ───────────────────────────────────────────────────────────
+    repo_tag = f"source:github/{slug}"
+    existing = [e for e in store.iter_entries() if repo_tag in e.tags]
+    if existing and not force and not dry_run:
+        console.print(
+            f"[yellow]Already fetched:[/] {slug} "
+            f"({len(existing)} entr{'y' if len(existing) == 1 else 'ies'} in .vein/)\n"
+            f"  Re-run with [bold]--force[/] to overwrite, "
+            f"or [bold]--dry-run[/] to preview without writing."
+        )
+        raise SystemExit(0)
+
+    if existing and force:
+        # delete old entries before re-fetch
+        deleted = 0
+        for e in existing:
+            try:
+                if e._path and e._path.exists():
+                    e._path.unlink()
+                    deleted += 1
+            except Exception:
+                pass
+        if deleted:
+            console.print(f"[dim]--force: removed {deleted} existing entr{'y' if deleted == 1 else 'ies'} for {slug}[/]")
+
     console.print(f"[dim]fetch:[/] [bold]{slug}[/]  →  {github_url}")
 
     # ── clone to temp dir ─────────────────────────────────────────────────────

@@ -465,30 +465,64 @@ vein import docs/decisions.md --no-index   # 先不 embed，最後再 vein reind
 
 ---
 
-## `vein mcp`
+## `vein mcp` — 接 LLM
 
-啟動 MCP server，讓 Claude Desktop / 任何 MCP client 直接查 `.vein/`：
+啟動 MCP server，讓任何 MCP client 直接查 `.vein/`。暴露 4 個 tool：
+`vein_brief()` / `vein_recall(query)` / `vein_log(type, message)` / `vein_status()`。
 
 ```bash
-vein mcp                     # stdio transport（Claude Desktop 預設）
-vein mcp --transport sse     # SSE transport（browser / remote）
+vein mcp                                       # stdio（Claude Code / Desktop）
+vein mcp --project /Users/lion/Documents/vein  # 指定 store（會 os.chdir，不靠 cwd）
+vein mcp --transport sse --port 8765           # SSE（browser / remote）
 ```
 
-Claude Desktop config（`~/.claude.json`）：
+接法依介面而不同——**三者機制不一樣，別搞混**：
+
+### Cowork（桌機 app）→ 必須走 plugin
+
+Cowork **不讀** 專案 `.mcp.json` 也不讀 `claude_desktop_config.json`。唯一的路是打包成 plugin 安裝：
+
+```bash
+cd /Users/lion/Documents/vein && python3 shell/build_vein_cowork_plugin.py
+# → dist/vein-lore-plugin.zip
+```
+
+安裝：Cowork tab → 左側欄 **Customize** → **Plugins** → Personal plugins 的 **+** → 上傳該 zip。
+確認：重開 session，對話框打 `call vein_status`。
+
+### Claude Code → 專案 `.mcp.json`（或 `~/.claude.json`）
 
 ```json
 {
   "mcpServers": {
-    "vein-myproject": {
-      "command": "vein",
-      "args": ["mcp"],
-      "cwd": "/path/to/your/project"
-    }
+    "vein": { "command": "vein", "args": ["mcp", "--project", "/Users/lion/Documents/vein"] }
   }
 }
 ```
 
-暴露的 tools：`vein_recall` / `vein_log` / `vein_brief` / `vein_status`
+### Claude Desktop（Chat，非 Cowork）→ `claude_desktop_config.json`
+
+同上 JSON，放進 `~/Library/Application Support/Claude/claude_desktop_config.json`，重開 app 看 🔌。
+
+> **已知限制：** GUI 起的 MCP 若接不到 ollama，recall 會 silent 降級成 FTS5/BM25 關鍵字（少了語意 re-rank）。要恢復：`ollama serve` 在跑、`nomic-embed-text` 已 pull，且 launch env 看得到 `localhost:11434`（必要時 plugin `.mcp.json` 補 `OLLAMA_HOST` env）。
+
+---
+
+## 維護腳本（`shell/`）
+
+| 腳本 | 做什麼 | 何時跑 |
+|------|--------|--------|
+| `build_vein_cowork_plugin.py` | 把 `vein mcp` 打包成 Cowork plugin zip | 第一次接 Cowork、換 store 路徑 / 換機器 |
+| `import_lode_decisions.py` | 解析 `lode/docs/decisions.md` → 匯入 `### 🔴/🟡` 真雷 + 架構決策表 + known-issue 表 | 每次在 decisions.md 新增雷後（idempotent，只補新的） |
+| `prune_noise.py` | 刪 auto-fetch 雜訊（IINA 符號 dump / `fetch`+`github` / `auto` 比較 stub / 空 body）；預設 dry-run，永遠跳過 `source:lode:docs/decisions.md` | 雜訊變多時 |
+
+```bash
+python3 shell/import_lode_decisions.py     # 匯入 + 自動 reindex
+python3 shell/prune_noise.py               # 預覽（dry-run）
+python3 shell/prune_noise.py --yes         # 實刪 + reindex
+```
+
+> 這套取代了舊的 `export_lore_to_lode.py` 快照流程（已移除）——Lode 現在直接走 MCP，不再產 `vein_lore.md` 影印本。
 
 ---
 
