@@ -25,6 +25,44 @@ _TYPE_ALIASES = {
     "r": "reference", "ref": "reference",
 }
 
+# Templates: preset type + tags + body skeleton
+# Usage: vein log --template ios-pitfall "title"
+TEMPLATES: dict[str, dict] = {
+    "ios-pitfall": {
+        "type": "pitfall",
+        "tags": ["project:iphone-app", "ios"],
+        "body": (
+            "## Trigger\n"
+            "(what API / action caused this)\n\n"
+            "## Root Cause\n"
+            "(Xcode bug / iOS API limit / entitlement / architecture)\n\n"
+            "## Fix\n"
+            "(steps, code snippet)\n\n"
+            "## Regression Warning\n"
+            "(does this break anything else?)"
+        ),
+    },
+    "ios-decision": {
+        "type": "decision",
+        "tags": ["project:iphone-app", "ios"],
+        "body": (
+            "## Context\n\n"
+            "## Decision\n\n"
+            "## Alternatives Considered\n\n"
+            "## Trade-offs"
+        ),
+    },
+    "ios-lore": {
+        "type": "lore",
+        "tags": ["project:iphone-app", "ios"],
+        "body": (
+            "## Summary\n\n"
+            "## Details\n\n"
+            "## When to Apply"
+        ),
+    },
+}
+
 
 def _resolve_type(raw: str) -> EntryType:
     t = raw.lower().strip()
@@ -32,7 +70,7 @@ def _resolve_type(raw: str) -> EntryType:
 
 
 @click.command("log")
-@click.argument("entry_type", metavar="TYPE")
+@click.argument("entry_type", metavar="TYPE", required=False)
 @click.argument("message", required=False)
 @click.option("--tag", "-t", multiple=True, help="Add a tag (repeatable)")
 @click.option("--no-polish", is_flag=True, help="Skip ollama polish, use raw input")
@@ -40,8 +78,10 @@ def _resolve_type(raw: str) -> EntryType:
 @click.option("--source-url", default="", help="Source URL (web clipper)")
 @click.option("--source-title", default="", help="Source page title")
 @click.option("--related", multiple=True, help="Related entry IDs")
+@click.option("--template", default="", help=f"Preset template: {', '.join(TEMPLATES)}")
+@click.option("--list-templates", is_flag=True, help="List available templates and exit")
 def cmd_log(
-    entry_type: str,
+    entry_type: str | None,
     message: str | None,
     tag: tuple[str, ...],
     no_polish: bool,
@@ -49,6 +89,8 @@ def cmd_log(
     source_url: str,
     source_title: str,
     related: tuple[str, ...],
+    template: str,
+    list_templates: bool,
 ) -> None:
     """Capture a lore entry into .vein/.
 
@@ -60,9 +102,33 @@ def cmd_log(
     Examples:
       vein log decision "DMA uses callback not polling: SystemC is event-driven"
       vein log pitfall "Seed 0x42A3 reproduces the DMA race condition"
-      vein log lore "gc_trigger_wait holds DMA lock — watch for deadlock"
+      vein log --template ios-pitfall "CoreLocation background wakeup limit"
       echo "long note..." | vein log decision
     """
+    if list_templates:
+        for name, tpl in TEMPLATES.items():
+            console.print(f"[bold cyan]{name}[/]  type={tpl['type']}  tags={tpl['tags']}")
+        return
+
+    # ── template path ────────────────────────────────────────────
+    tpl_tags: list[str] = []
+    tpl_body: str = ""
+    if template:
+        if template not in TEMPLATES:
+            raise click.BadParameter(
+                f"Unknown template '{template}'. Available: {', '.join(TEMPLATES)}",
+                param_hint="--template",
+            )
+        tpl = TEMPLATES[template]
+        # template sets type if not explicitly given
+        if not entry_type:
+            entry_type = tpl["type"]
+        tpl_tags = list(tpl["tags"])
+        tpl_body = tpl["body"]
+
+    if not entry_type:
+        raise click.UsageError("TYPE is required (or use --template).")
+
     etype = _resolve_type(entry_type)
     valid_types = ("decision", "lore", "pitfall", "reference")
     if etype not in valid_types:
@@ -79,6 +145,10 @@ def cmd_log(
             message = click.prompt("Message")
     if not message:
         raise click.UsageError("No message provided.")
+
+    # prepend template body to message so ollama sees the structure
+    if tpl_body:
+        message = f"{message}\n\n{tpl_body}"
 
     store = VeinStore.require()
     load_env(store.root)
@@ -113,9 +183,9 @@ def cmd_log(
     if draft is None:
         draft = fallback_polish(message, etype)
 
-    # merge explicit CLI tags
+    # merge template tags + explicit CLI tags
     existing_tags = draft.get("tags") or []
-    for t in tag:
+    for t in tpl_tags + list(tag):
         if t not in existing_tags:
             existing_tags.append(t)
     draft["tags"] = existing_tags
