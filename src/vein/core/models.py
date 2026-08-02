@@ -7,7 +7,7 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 import yaml
 
@@ -66,11 +66,25 @@ class Entry:
 
     # ── construction helpers ──────────────────────────────────────
 
+    # Ids created in the same second share their timestamp prefix, so
+    # uniqueness rests entirely on the 2-byte suffix — a batch of 20 collides
+    # with ~0.3% probability (birthday bound), and a collision means the second
+    # entry's file silently overwrites the first. Remember the ids issued for
+    # the current second and re-roll on repeat; the set resets on clock tick.
+    _issued_second: ClassVar[str] = ""
+    _issued_ids: ClassVar[set[str]] = set()
+
     @classmethod
     def new_id(cls) -> str:
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        suffix = secrets.token_hex(2)
-        return f"{ts}-{suffix}"
+        while True:
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            if ts != cls._issued_second:
+                cls._issued_second = ts
+                cls._issued_ids.clear()
+            candidate = f"{ts}-{secrets.token_hex(2)}"
+            if candidate not in cls._issued_ids:
+                cls._issued_ids.add(candidate)
+                return candidate
 
     @classmethod
     def make(

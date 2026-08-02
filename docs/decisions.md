@@ -1399,3 +1399,84 @@ Vein 的真正護城河不是「比其他 note 工具更好」，而是**唯一�
 
 **Why：**
 「能做 13 件事的工具」vs「把一件事做到極致的工具」——後者更容易讓陌生人在 5 分鐘內上手，符合 D-008 public flip 條件三。
+
+---
+
+### D-030 — Recall 三重失效：CJK 斷詞、rowid-order 候選、embed model 漂移（2026-08-02）
+
+**症狀（Rex 回報）：** 中文 recall 幾乎必定撈到 2026-06-02 23:41:30 那批 Lode 匯入的舊 entry，
+之後兩個月寫的 900 多條像不存在。
+
+**根因是三個獨立 bug 疊在一起，缺一都不會這麼慘：**
+
+**1. FTS5 `unicode61` 沒有 CJK 斷詞**
+unicode61 依 Unicode category 切 token，漢字是 `Lo`（letter），所以「一整段標點之間的中文」= 一個 token。
+`就整個放棄索引` 是單一 token，查 `索引` 完全撈不到。實測本 repo corpus：單詞 CJK recall 0–54%，
+`為什麼用 sqlite` 這種多詞查詢回 **0 筆**。
+
+**2. `vector_search` 的候選集是 rowid order 的前 100 筆**
+```python
+candidate_ids = self.fts_search(query, k=100)
+if not candidate_ids:                      # ← 中文查詢幾乎必定走這裡
+    rows = conn.execute(
+        "SELECT entry_id FROM embeddings WHERE vector IS NOT NULL LIMIT 100")
+```
+沒有 `ORDER BY` = rowid order = **最早插入的 100 筆** = 06-02 那批匯入。
+語意搜尋等於只在最舊的 100 筆裡挑答案，之後寫的永遠撈不到。這就是「凍結在 06-02」的真正機制。
+
+**3. 捕獲路徑用 nomic，查詢路徑用 config 的模型**
+`store.write_entry()` 的 default 寫死 `embed_model="nomic-embed-text"`，而
+`vein log` / `vein debrief` / MCP `vein_log` 三條主要捕獲路徑**都沒傳這個參數**。
+`recall` 卻是從 `config.yaml` 讀 `qwen3-embedding:4b`。
+結果：886 筆有 vector 的 entry 裡 **747 筆是 768 維**（nomic），查詢向量是 2560 維（qwen3）。
+舊 code 的 `cosine_sim` 用 `zip`，長度不等會**靜默截斷**到 768 維算出一個看起來合理的分數——
+不會報錯，只是答案是垃圾。而唯一維度正確的 139 筆，剛好就是 06-02 那批。
+所以 Rex 說的「寫得進 storage 但不在語意索引裡」字面上完全正確。
+
+**決定：**
+
+| Bug | 解法 |
+|-----|------|
+| CJK 斷詞 | 新 `core/cjk.py`：index 時每個漢字獨立成 token（`segment`），query 時同樣切開再包成 FTS5 phrase（`build_match`）。`"索 引"` 要求 token 相鄰 = 精確 substring match，recall 100% 且不失精度 |
+| 候選集 | `vector_search` 改**全 corpus 掃描**，不再用 FTS 當 gate。909 筆 × 2560 維 ≈ 200ms（numpy 有裝更快），到 ~50K 筆前都不需要 ANN |
+| model 漂移 | `write_entry` 的 default 改成**讀專案 config**（`store.model_cfg()`），不是模組常數。維度不符的 vector 在 scan 時跳過並計數，`recall` 會提示，`vein reindex` 自動偵測並補嵌 |
+
+**FTS 三層查詢（`fts_search`，命中就停）：**
+
+| 層 | 查法 | 為什麼需要 |
+|---|------|-----------|
+| 1 | 每個 chunk 一個 phrase，AND | 最精確。`跨專案付費策略` 只回那一筆 |
+| 2 | 同樣的 phrase，OR | 多詞查詢部分命中也要有結果 |
+| 3 | CJK chunk 拆成**重疊 bigram**，OR | **中文本來就不打空格**。`索引效能` 當成單一 phrase 會要求這四個字連著出現 → 撈不到任何東西。拆成 `"索 引" OR "引 效" OR "效 能"` 才找得到分別講「索引」和「效能」的 entry |
+
+第 3 層是最後手段，只在前兩層都空的時候才跑，所以不會稀釋精確查詢。
+跨詞邊界的 bigram（`引效`）幾乎不會命中，等於免費。混排 chunk（`為什麼用sqlite`）也在這層拆開。
+
+**Rejected：**
+- **FTS5 `trigram` tokenizer**：查詢 < 3 字就失效，中文兩字詞（索引 / 快取 / 效能）是大宗，直接出局
+- **CJK bigram 當索引格式**：index 大一倍。改成「index 存 unigram、查詢端第 3 層才組 bigram」——
+  同樣的 recall，index 不變大，而且精確查詢仍走 phrase 不受影響
+- **中文斷詞庫（jieba 等）**：多一個 runtime dep + 詞典，而且斷錯詞會**降低** recall。逐字 + phrase 沒有這個風險
+- **保留 FTS pre-filter 只是加大 LIMIT**：治標。pre-filter 當 gate 的設計本身就錯——語意搜尋的價值正是找出關鍵字漏掉的東西
+- **韓文一起切**：韓文本來就有空格分詞，切開反而破壞詞界，`cjk.py` 明確排除 Hangul
+
+**順帶修掉的：**
+- `recall` 改用 **RRF 融合** BM25 + cosine，不再是「有 vector 結果就不看 FTS」的 cascade——
+  精確關鍵字命中曾被含糊的 embedding 蓋掉
+- `store.read_entry(id)` 原本 O(n) 掃全部 entry 做 YAML parse（每個 hit 都掃一次），改成直接組路徑；
+  且原本 `status_filter` 預設 `active`，**superseded entry 會 raise KeyError 被靜默吞掉**，
+  跟 D-026「superseded 是降權不是隱藏」矛盾。改成 `status_filter=None`
+- `vein reindex` 改成**預設增量**（只補沒有 / 沒 vector / 維度不符的）。原本每次都全部重嵌 910 筆要十幾分鐘，
+  所以沒人跑，所以缺口一直在。`--all` / `--force` 保留全量
+- `vein status` 加 index 健康度一行：`{embedded}/{total} embedded`，讓漂移不再隱形
+- vector 儲存從 JSON text 改成 **L2-normalized float32 BLOB**（cosine = dot product）。
+  22MB → 索引體積與 parse 成本都降一個量級，全 corpus 掃描才划算。schema v2，開檔時就地遷移，不需要 ollama
+
+**雷區（給未來的自己）：**
+- **`zip()` 算 cosine 是靜默錯誤**。長度不等不會噴錯，只會算出一個「看起來合理」的分數。
+  任何比對兩個向量的地方都要先檢查維度
+- **`LIMIT` 沒有 `ORDER BY` 就是 rowid order**，在 append-only 的表裡等於「最舊的 N 筆」。
+  這是本次最惡毒的一環：它讓系統看起來有在運作，只是永遠回答錯的東西
+- **參數 default 寫死模型名是漂移的溫床**。default 應該指向設定來源，不是某個具體值
+
+**Revisit when：** corpus 破 50K → 換 sqlite-vec ANN，全 corpus 掃描會開始有感

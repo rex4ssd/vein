@@ -52,6 +52,15 @@ def embed_entry_text(entry) -> str:
 # ── cosine similarity ─────────────────────────────────────────────
 
 def cosine_sim(a: Sequence[float], b: Sequence[float]) -> float:
+    """Cosine similarity. Returns 0.0 for mismatched dimensions.
+
+    Vectors of different width come from different embedding models and are not
+    comparable. This used to ``zip`` them, which truncates to the shorter
+    operand and yields a plausible-looking score computed from an arbitrary
+    prefix — a silent wrong answer rather than a visible failure.
+    """
+    if len(a) != len(b):
+        return 0.0
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))

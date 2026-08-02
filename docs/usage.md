@@ -23,7 +23,7 @@ vein --version
 ```
 vein init          — 初始化 .vein/ 目錄結構
 vein log           — 捕捉一筆 decision / lore / pitfall / reference
-vein recall        — 語意搜尋（FTS5 + embedding + grep 三層 fallback）
+vein recall        — 語意搜尋（BM25 + embedding RRF 融合，CJK-aware）
 vein brief         — orientation digest，給 AI session 用
 vein status        — 統計 + 近期 entries 一覽
 ```
@@ -274,19 +274,32 @@ vein ask "hal" --raw            # 輸出原始 markdown（可 pipe）
 
 ## `vein recall`
 
-語意搜尋（FTS5 BM25 + nomic-embed-text cosine re-rank）：
+語意搜尋（FTS5 BM25 + embedding cosine，RRF 融合）：
 
 ```bash
 vein recall "concurrent write issue"
-vein recall "vscode rename"           # 找 VS Code 行為規格
+vein recall "為什麼用 sqlite"          # 中文可用，逐字 token + phrase match
 vein recall "why polling bad" --budget 32k
 vein recall "timer" --fts-only        # 只用 FTS5，跳過 embedding
 vein recall "dma" -n 10
 ```
 
-搜尋優先順序：vector search → FTS5 → grep（三層 fallback）。
+**排序方式：** BM25 排名與 cosine 排名用 RRF（Reciprocal Rank Fusion）融合，不是
+「有 vector 結果就不看關鍵字」。兩邊都命中的排最前。ollama 沒開 → 降級純 FTS5 → 再降級 grep。
 
-**tip:** 新增 entries 後執行 `vein reindex` 讓 FTS5 + embedding 生效。
+顯示的 mode 標籤：`hybrid`（兩邊都有）/ `semantic`（只有向量）/ `fts` / `keyword`（grep）。
+
+**中文查詢：** SQLite 內建的 `unicode61` tokenizer 會把「一整段沒有標點的中文」當成單一 token，
+查 `索引` 撈不到 `就整個放棄索引`。Vein 在 index 與 query 兩端都把漢字逐字切開，再用 FTS5 phrase
+（`"索 引"`，要求 token 相鄰）還原精確比對。
+
+查詢分三層，命中就停：phrase AND（最精確）→ phrase OR → CJK bigram OR。
+第三層是給「中文不打空格」的自然查法用的——`索引效能` 當成單一 phrase 會要求這四個字連著出現，
+拆成 `"索 引" OR "引 效" OR "效 能"` 才找得到分別講索引和效能的 entry。
+詳見 `src/vein/core/cjk.py` 與 D-030。
+
+**tip:** `vein log` / `vein debrief` / MCP `vein_log` 都會即時進 index，正常不需手動 reindex。
+`vein status` 有顯示 index 覆蓋率，有缺口（ollama 當時沒開）才需要跑 `vein reindex`。
 
 ---
 
@@ -428,12 +441,23 @@ vein gc --committed --older-than 7       # 只清已 git commit 的（safer）
 重建 `.vein/index/vein.db` 的 FTS5 + embedding index：
 
 ```bash
-vein reindex                    # 增量 upsert 全部 entries
+vein reindex                    # 增量：只補「該嵌但沒嵌」的
+vein reindex --all              # 全部重嵌，但保留 DB
 vein reindex --force            # 先 drop 再重建
 vein reindex --type pitfall     # 只 reindex pitfalls
 ```
 
-什麼時候跑：第一次 setup、手動編輯 `.vein/*.md` 後、換 embed model 後（需 `--force`）、`vein recall` 搜不到預期結果。
+**預設是增量**，只處理三種 entry：
+
+1. 根本不在 index 裡的
+2. 在 index 裡但沒有 vector 的（capture 當下 ollama 沒開）
+3. vector 維度跟現在的 embed model 不符的（換過模型）
+
+第 3 點會自動偵測：reindex 先對現行模型送一個探測字串問出維度，再掃出所有寬度不符的 entry。
+換 embed model 後直接跑 `vein reindex` 就會全部補上，不需要記得加 `--force`。
+
+什麼時候跑：第一次 setup、手動編輯 `.vein/*.md` 後、換 embed model 後、`vein recall` 搜不到預期結果。
+`vein status` 會顯示 `{embedded}/{total} embedded`，有缺口會直接提示。
 
 需要 ollama：
 

@@ -18,8 +18,39 @@ def test_new_id_format():
 
 
 def test_new_id_unique():
-    ids = {Entry.new_id() for _ in range(20)}
-    assert len(ids) == 20  # all unique
+    """In-process ids are guaranteed unique, not just probably unique.
+
+    The 2-byte suffix alone collides at ~0.3% for 20 same-second ids (birthday
+    bound) — this test used to flake on exactly that, and in production a
+    collision meant one entry's file silently overwriting another's during a
+    batch import. new_id now tracks the current second's issued ids and
+    re-rolls, so even 5000 draws must all differ.
+    """
+    n = 5000
+    ids = {Entry.new_id() for _ in range(n)}
+    assert len(ids) == n
+
+
+def test_new_id_forced_collision_rerolls(monkeypatch):
+    """Even a rigged RNG that repeats itself may not produce a duplicate id."""
+    import secrets as real_secrets
+
+    # Earlier tests may already have issued "…-aaaa" this second, which would
+    # burn the first canned draw on their collision instead of ours.
+    Entry._issued_ids.clear()
+
+    # First two draws identical, then genuinely random.
+    canned = iter(["aaaa", "aaaa"])
+    monkeypatch.setattr(
+        "vein.core.models.secrets",
+        type("S", (), {"token_hex": staticmethod(
+            lambda n: next(canned, real_secrets.token_hex(n))
+        )}),
+    )
+    a = Entry.new_id()
+    b = Entry.new_id()
+    assert a != b
+    assert a.endswith("-aaaa")  # first draw accepted; the repeat was re-rolled
 
 
 # ── Entry.to_file_content / from_file roundtrip ───────────────────

@@ -26,8 +26,9 @@ def cmd_recall(query: str, limit: int, budget: str, raw_output: bool,
                fts_only: bool, cross_project: bool) -> None:
     """Semantic search over .vein/ lore.
 
-    Uses FTS5 BM25 pre-filter → nomic-embed-text cosine re-rank when ollama is
+    Fuses FTS5 BM25 and embedding cosine rankings (RRF) when ollama is
     available. Falls back gracefully to keyword search when ollama is offline.
+    CJK queries are tokenised per character — see core/cjk.py.
 
     \b
     Examples:
@@ -36,42 +37,30 @@ def cmd_recall(query: str, limit: int, budget: str, raw_output: bool,
       vein recall "app store reject" -x      # search across all projects
     """
     store = VeinStore.require()
-    cfg = store.load_config()
-    base_url = cfg.get("model", {}).get("base_url", "http://localhost:11434")
-    embed_model = cfg.get("model", {}).get("embed_model", "nomic-embed-text")
-    min_score = cfg.get("capture", {}).get("min_cosine_threshold", 0.30)
+    base_url, embed_model = store.model_cfg()
+    min_score = store.load_config().get("capture", {}).get("min_cosine_threshold", 0.30)
 
     hit_ids: list[str] = []
     search_mode = "keyword"
+    dim_mismatch = 0
 
-    if not fts_only:
-        # Try hybrid vector search
-        try:
-            idx = store.open_index()
-            hits = idx.vector_search(
+    try:
+        idx = store.open_index()
+        if fts_only:
+            hit_ids = idx.fts_search(query, k=limit)
+            search_mode = "fts" if hit_ids else "keyword"
+        else:
+            hit_ids, search_mode = idx.hybrid_search(
                 query,
                 base_url=base_url,
                 embed_model=embed_model,
                 k=limit,
                 min_score=min_score,
             )
-            idx.close()
-            if hits:
-                hit_ids = [eid for eid, _ in hits]
-                search_mode = "semantic"
-        except Exception:
-            pass
-
-    if not hit_ids:
-        # FTS fallback (index exists)
-        try:
-            idx = store.open_index()
-            hit_ids = idx.fts_search(query, k=limit)
-            idx.close()
-            if hit_ids:
-                search_mode = "fts"
-        except Exception:
-            pass
+        dim_mismatch = idx.last_dim_mismatch
+        idx.close()
+    except Exception:
+        pass
 
     # Resolve local hits → Entry objects (grep as final fallback)
     entries: list = []
@@ -100,6 +89,12 @@ def cmd_recall(query: str, limit: int, budget: str, raw_output: bool,
 
     # D-026: superseded entries sink; relevance order preserved within group.
     entries.sort(key=lambda e: e.recall_demotion)
+
+    if dim_mismatch:
+        console.print(
+            f"[yellow]Note:[/] {dim_mismatch} entries were embedded with a different "
+            f"model and are unreachable. [dim]Run `vein reindex` to re-embed them.[/]"
+        )
 
     if entries:
         _render_results(entries, query=query, mode=search_mode, raw_output=raw_output)
@@ -151,9 +146,11 @@ def _render_results(
     raw_output: bool,
 ) -> None:
     mode_label = {
-        "semantic": "[green]semantic[/] (FTS+embed)",
+        "hybrid":   "[green]hybrid[/] (BM25+embed RRF)",
+        "semantic": "[green]semantic[/] (embed)",
         "fts":      "[cyan]FTS5 BM25[/]",
         "keyword":  "[yellow]keyword[/]",
+        "none":     "[yellow]keyword[/]",
     }.get(mode, mode)
 
     console.print(

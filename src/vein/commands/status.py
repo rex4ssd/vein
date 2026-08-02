@@ -21,8 +21,12 @@ def cmd_status(show_all: bool) -> None:
     project_name = cfg.get("project", {}).get("name", store.root.name)
     phase = cfg.get("project", {}).get("phase", "0")
 
-    stats = store.stats()
-    total = sum(stats.values())
+    # One full parse of the store — every section below derives from it.
+    # (This command used to call list_entries ~7 times: once per type for the
+    # table, once for index health, once for pitfalls, once for recents.)
+    entries = store.list_entries(status_filter=None)
+    disk_ids = store.entry_ids()  # filename-level truth, includes broken files
+    total = len(disk_ids)
 
     console.print(f"\n[bold cyan]{project_name}[/]  [dim]Phase {phase}[/]  "
                   f"[dim]{store.vein_dir}[/]")
@@ -33,15 +37,47 @@ def cmd_status(show_all: bool) -> None:
     t.add_column("count", justify="right")
     t.add_column("active", justify="right")
     for type_key in ("decision", "lore", "pitfall", "reference"):
-        all_entries = store.list_entries(type_key, status_filter=None)  # type: ignore
-        active = [e for e in all_entries if e.status == "active"]
-        t.add_row(type_key, str(len(all_entries)), str(len(active)))
+        of_type = [e for e in entries if e.type == type_key]
+        active = [e for e in of_type if e.status == "active"]
+        t.add_row(type_key, str(len(of_type)), str(len(active)))
     t.add_section()
     t.add_row("[bold]total[/]", f"[bold]{total}[/]", "")
     console.print(t)
 
+    # ── unparseable files ──
+    # A file whose frontmatter won't parse exists on disk but is invisible to
+    # every command — no listing, no recall, no reindex. Name the ids so it's
+    # fixable rather than a silent off-by-N in the counts.
+    broken = disk_ids - {e.id for e in entries}
+    if broken:
+        shown = ", ".join(sorted(broken)[:3]) + ("…" if len(broken) > 3 else "")
+        console.print(
+            f"[yellow]⚠ {len(broken)} file(s) with unparseable frontmatter "
+            f"(unsearchable):[/] [dim]{shown}[/]\n"
+        )
+
+    # ── index health ──
+    # Entries land on disk even when embedding fails, so "on disk" and
+    # "semantically searchable" drift apart silently. Surface the gap.
+    try:
+        idx = store.open_index()
+        missing = len(idx.needs_reindex({e.id for e in entries}))
+        unembedded = len(idx.unembedded_ids())
+        embedded = idx.count_embedded()
+        idx.close()
+        if missing or unembedded:
+            console.print(
+                f"[yellow]⚠ Index:[/] {embedded}/{total} embedded — "
+                f"{missing} unindexed, {unembedded} keyword-only.  "
+                f"[dim]Run `vein reindex`.[/]\n"
+            )
+        else:
+            console.print(f"[dim]Index: {embedded}/{total} embedded.[/]\n")
+    except Exception:
+        pass
+
     # ── active pitfalls ──
-    pitfalls = store.list_entries("pitfall", status_filter="active")
+    pitfalls = [e for e in entries if e.type == "pitfall" and e.status == "active"]
     if pitfalls:
         console.print(f"[bold yellow]⚠ Active pitfalls ({len(pitfalls)}):[/]")
         for e in pitfalls[:5]:
@@ -52,7 +88,7 @@ def cmd_status(show_all: bool) -> None:
     # ── recent entries ──
     console.print("\n[bold]Recent entries:[/]")
     all_recent = sorted(
-        store.list_entries(status_filter=None if show_all else "active"),
+        (e for e in entries if show_all or e.status == "active"),
         key=lambda e: e.date,
         reverse=True,
     )[:8]

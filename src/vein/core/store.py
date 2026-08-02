@@ -12,6 +12,8 @@ import yaml
 from .models import Entry, EntryType
 
 VEIN_DIR = ".vein"
+DEFAULT_BASE_URL = "http://localhost:11434"
+DEFAULT_EMBED_MODEL = "nomic-embed-text"
 ENTRY_DIRS: dict[str, str] = {
     "decision":  "decisions",
     "lore":      "lore",
@@ -72,6 +74,11 @@ class VeinStore:
     def __init__(self, root: Path):
         self.root = root
         self.vein_dir = root / VEIN_DIR
+        # Outcome of the last write_entry auto-index: True = embedded,
+        # False = written to FTS but no vector (ollama down), None = index
+        # unreachable entirely. Callers use it to tell the user the truth
+        # instead of assuming the write was fully indexed.
+        self.last_index_ok: bool | None = None
 
     # ── root discovery ────────────────────────────────────────────
 
@@ -136,6 +143,14 @@ class VeinStore:
             return {}
         return yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
 
+    def model_cfg(self) -> tuple[str, str]:
+        """(base_url, embed_model) from .vein/config.yaml, with defaults."""
+        m = self.load_config().get("model", {}) or {}
+        return (
+            m.get("base_url") or DEFAULT_BASE_URL,
+            m.get("embed_model") or DEFAULT_EMBED_MODEL,
+        )
+
     # ── write ─────────────────────────────────────────────────────
 
     def write_entry(
@@ -143,22 +158,56 @@ class VeinStore:
         entry: Entry,
         *,
         auto_index: bool = True,
-        base_url: str = "http://localhost:11434",
-        embed_model: str = "nomic-embed-text",
+        base_url: str | None = None,
+        embed_model: str | None = None,
     ) -> Path:
+        """Write an entry to disk and (by default) index it.
+
+        ``base_url``/``embed_model`` default to **the project's config**, not to
+        a module constant. They used to default to the literal
+        ``"nomic-embed-text"``, and the three main capture paths (``vein log``,
+        ``vein debrief``, MCP ``vein_log``) never passed a value — so entries
+        were embedded with nomic (768-dim) while ``recall`` queried with the
+        configured model (2560-dim). The vectors were written, but no query
+        could ever be compared against them: 747 of 886 entries in this repo's
+        own store were unreachable by semantic search because of this.
+        """
+        cfg_base, cfg_embed = self.model_cfg()
+        base_url = base_url or cfg_base
+        embed_model = embed_model or cfg_embed
+
         subdir = ENTRY_DIRS.get(entry.type, "lore")
         dest_dir = self.vein_dir / subdir
         dest_dir.mkdir(exist_ok=True)
         path = dest_dir / f"{entry.id}.md"
+
+        # A freshly-minted id landing on an existing file is a collision with
+        # another vein process in the same second (ids share their timestamp
+        # prefix and differ only in a 2-byte suffix) — re-roll rather than
+        # silently overwrite someone else's entry. Scoped to ids this process
+        # just generated (`_issued_ids`, current second only): entries carrying
+        # a preserved id (migrate/import re-runs) and updates (_path set via
+        # read_entry) legitimately overwrite in place.
+        while (
+            entry._path is None
+            and entry.id in Entry._issued_ids
+            and path.exists()
+        ):
+            entry.id = Entry.new_id()
+            path = dest_dir / f"{entry.id}.md"
+
         path.write_text(entry.to_file_content(), encoding="utf-8")
         entry._path = path
         # invalidate brief cache
         self._invalidate_brief()
         # update index
+        self.last_index_ok = None
         if auto_index:
             try:
                 idx = self.open_index()
-                idx.upsert(entry, base_url=base_url, embed_model=embed_model, silent=True)
+                self.last_index_ok = idx.upsert(
+                    entry, base_url=base_url, embed_model=embed_model, silent=True
+                )
                 idx.close()
             except Exception:
                 pass  # index failure is non-fatal
@@ -174,8 +223,17 @@ class VeinStore:
     def read_entry(self, id_or_path: str | Path) -> Entry:
         if isinstance(id_or_path, Path):
             return Entry.from_file(id_or_path)
-        # search by id prefix
-        for entry in self.iter_entries():
+
+        # Exact id → direct file hit. Index lookups always come in this form, and
+        # scanning would be O(entries) of YAML parsing per hit.
+        for subdir in ENTRY_DIRS.values():
+            path = self.vein_dir / subdir / f"{id_or_path}.md"
+            if path.is_file():
+                return Entry.from_file(path)
+
+        # Prefix match. status_filter=None on purpose: index hits may point at
+        # superseded entries, and recall ranks rather than hides those (D-026).
+        for entry in self.iter_entries(status_filter=None):
             if entry.id.startswith(id_or_path):
                 return entry
         raise KeyError(f"Entry not found: {id_or_path}")
@@ -212,6 +270,23 @@ class VeinStore:
         if limit:
             entries = entries[:limit]
         return entries
+
+    def entry_ids(self) -> set[str]:
+        """All entry ids present on disk, by filename — no YAML parsing.
+
+        Ids are the file stems by construction (``write_entry`` writes
+        ``{id}.md``), so this is the cheap way to answer "what exists?" —
+        ``iter_entries`` parses every file's frontmatter, which callers that
+        only need ids (stale-row sweeps, index-coverage checks) shouldn't pay.
+        Includes files whose frontmatter is broken, which is exactly right for
+        those callers: a corrupt entry still exists on disk.
+        """
+        return {
+            p.stem
+            for subdir in ENTRY_DIRS.values()
+            if (self.vein_dir / subdir).is_dir()
+            for p in (self.vein_dir / subdir).glob("*.md")
+        }
 
     # ── delete ───────────────────────────────────────────────────
 
@@ -336,7 +411,11 @@ class VeinStore:
             if score > 0:
                 results.append((entry, score))
 
-        results.sort(key=lambda x: (-x[1], x[0].date), reverse=False)
+        # Score desc, ties broken by date desc. (Two stable sorts: the second
+        # keeps the first's order within equal scores. The old version sorted
+        # by (-score, date asc) and then re-sorted by score — the redundant
+        # pass quietly left ties oldest-first.)
+        results.sort(key=lambda x: x[0].date, reverse=True)
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:limit]
 

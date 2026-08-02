@@ -25,7 +25,6 @@ Tools exposed:
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 import click
 
@@ -77,43 +76,32 @@ def _build_server():
             Matching lore entries as markdown, or "No results" if nothing found.
         """
         store = VeinStore.require()
-        cfg = store.load_config()
-        base_url   = cfg.get("model", {}).get("base_url",   "http://localhost:11434")
-        embed_model = cfg.get("model", {}).get("embed_model", "nomic-embed-text")
-        min_score  = cfg.get("capture", {}).get("min_cosine_threshold", 0.30)
+        base_url, embed_model = store.model_cfg()
+        min_score = store.load_config().get("capture", {}).get("min_cosine_threshold", 0.30)
 
         entries = []
         mode = "keyword"
 
-        # 1. vector search
+        # 1. hybrid BM25 + embedding search (RRF-fused)
         try:
             idx = store.open_index()
-            hits = idx.vector_search(
+            ids, mode = idx.hybrid_search(
                 query, base_url=base_url, embed_model=embed_model,
                 k=limit, min_score=min_score,
             )
             idx.close()
-            if hits:
-                entries = [store.read_entry(eid) for eid, _ in hits]
-                mode = "semantic"
+            for eid in ids:
+                try:
+                    entries.append(store.read_entry(eid))
+                except Exception:
+                    continue
         except Exception:
             pass
 
-        # 2. FTS fallback
-        if not entries:
-            try:
-                idx = store.open_index()
-                ids = idx.fts_search(query, k=limit)
-                idx.close()
-                if ids:
-                    entries = [store.read_entry(eid) for eid in ids]
-                    mode = "fts"
-            except Exception:
-                pass
-
-        # 3. grep fallback
+        # 2. grep fallback (no index / no ollama)
         if not entries:
             entries = [e for e, _ in store.grep_entries(query, limit=limit)]
+            mode = "keyword"
 
         if not entries:
             return f"No lore found for: {query}\nTip: run `vein reindex` to rebuild the search index."
@@ -191,12 +179,19 @@ def _build_server():
         )
         path = store.write_entry(entry)
 
+        index_note = {
+            True:  "Indexed: keyword + semantic — searchable via vein_recall now.",
+            False: ("Indexed: keyword only — no embedding (ollama unreachable). "
+                    "Run `vein reindex` once it's back for semantic search."),
+            None:  "Indexed: NOT indexed — index unreachable. Run `vein reindex`.",
+        }.get(store.last_index_ok, "Indexed: unknown. Run `vein reindex` to be sure.")
+
         return (
             f"✓ Saved [{resolved}] {entry.id}\n"
             f"  Title: {entry.title}\n"
             f"  Path:  {path.relative_to(store.root)}\n"
             f"  Tags:  {', '.join(entry.tags) or '(none)'}\n\n"
-            f"Tip: run `vein reindex` to make this entry searchable via recall."
+            f"{index_note}"
         )
 
     # ── brief ─────────────────────────────────────────────────────────────

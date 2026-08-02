@@ -486,3 +486,97 @@
 4. 多跑幾次 `vein debrief` 驗 ollama 品質
 
 **Time spent:** 1 full session（code + review + marketing + strategy + lore migration）
+
+---
+
+## Session — 2026-08-02：Recall 三重失效修復（D-030）
+
+**起點：** Rex 回報中文 recall 幾乎必定撈到 2026-06-02 23:41:30 那批 Lode 匯入的舊 entry，
+之後兩個月寫的 900 多條像不存在。
+
+**診斷（三個獨立 bug，疊在一起才這麼慘）：**
+
+| # | Bug | 實測 |
+|---|-----|------|
+| 1 | FTS5 `unicode61` 無 CJK 斷詞，整段中文 = 一個 token | 單詞 recall 0–54%；`為什麼用 sqlite` 回 0 筆 |
+| 2 | `vector_search` 的無 FTS 命中分支是 `LIMIT 100` 無 `ORDER BY` = rowid order = 最舊 100 筆 | 兩個測試 query 的 top-5 **全部**來自 06-02 那批 |
+| 3 | `write_entry` default 寫死 nomic(768)，`recall` 從 config 讀 qwen3(2560)；`cosine_sim` 用 `zip` 靜默截斷 | 886 筆有 vector 的 entry 裡 **747 筆維度不符**，永遠撈不到 |
+
+Bug 3 是 Rex 說的「寫得進 storage 但不在語意索引裡」的真正機制——entry 有進 index、有 vector，
+只是那個 vector 跟任何查詢向量都不同維，比不了。而唯一維度正確的 139 筆剛好是 06-02 那批，
+跟 bug 2 完美共振成「凍結在 06-02」。
+
+**修復：**
+- **新 `src/vein/core/cjk.py`** — 漢字/假名逐字切 token（`segment`），query 端切開後包成 FTS5 phrase
+  （`build_match`）。`"索 引"` 要求 token 相鄰 = 精確 substring。明確排除韓文（本來就有空格分詞）。
+  順帶：所有 term 都加引號，FTS5 語法字元（`-` `*` `NEAR` `:`）不再噴 `OperationalError`
+- **FTS 三層查詢** — phrase AND → phrase OR → **CJK bigram OR**（`build_loose_match`）。
+  第 3 層是因為中文本來就不打空格：`索引效能` 當單一 phrase 會要求四字連著，撈不到任何東西；
+  拆成 `"索 引" OR "引 效" OR "效 能"` 才找得到分別講索引和效能的 entry。
+  只在前兩層都空時才跑，精確查詢不受稀釋
+- **`vector_search` 改全 corpus 掃描** — 拿掉 FTS pre-filter gate。909 筆 × 2560 維 ≈ 200ms
+- **`hybrid_search`（新）** — BM25 + cosine 用 RRF 融合，取代原本的 cascade
+- **`store.model_cfg()`** — `write_entry` 的 model default 改成讀專案 config，不是模組常數
+- **index schema v2** — vector 從 JSON text → L2-normalized float32 BLOB（cosine = dot product）；
+  開檔時就地遷移（不需要 ollama、不重讀檔案）
+- **維度防護** — scan 時跳過寬度不符的 vector 並計數，`recall` 提示，`cosine_sim` 本身也加 len 檢查
+- **`vein reindex` 改預設增量** — 只補「沒進 index / 沒 vector / 維度不符」的。原本每次全量重嵌
+  910 筆要十幾分鐘，所以沒人跑，所以缺口一直在。維度不符靠對現行模型送探測字串問出維度來偵測
+- **`vein status` 加 index 覆蓋率** — `{embedded}/{total} embedded`，漂移不再隱形
+- **`store.read_entry(id)`** — 原本 O(n) YAML parse 全掃（每個 hit 掃一次）→ 直接組路徑；
+  且原本預設 `status_filter="active"` 會讓 superseded entry raise KeyError 被靜默吞掉，
+  跟 D-026「superseded 是降權不是隱藏」矛盾 → 改 `status_filter=None`
+- **MCP `vein_log` 回傳訊息** — 原本固定叫人跑 `vein reindex`（其實 write_entry 已即時 index）。
+  改成回報實際結果：embedded / keyword-only / not indexed
+
+**驗證（本 repo 909 筆真實 corpus）：**
+- CJK FTS recall：8 個單詞查詢全部從 0–54% → **100%**（對齊 LIKE substring ground truth）
+- 14 個中文查詢裡「回 0 筆」的：**7/14 → 0/14**
+- 全量修復：909 筆重新用 qwen3-embedding:4b 嵌入，維度不符 747 → **0**，未嵌入 23 → **0**
+- 兩個 query 的 top-5：修前 5/5 來自 06-02；修後散佈 6 月～7 月
+- `tests/test_index.py` 新增 23 個 regression test，全 suite 86 passed
+
+**Files changed:**
+- `src/vein/core/cjk.py`（新）
+- `src/vein/core/index.py`（schema v2 + 遷移 + CJK FTS + 全掃 + RRF + 維度防護）
+- `src/vein/core/store.py`（`model_cfg` / `write_entry` default / `read_entry` / `last_index_ok`）
+- `src/vein/core/embed.py`（`cosine_sim` 維度檢查）
+- `src/vein/commands/recall.py` / `mcp_server.py`（改用 `hybrid_search`）
+- `src/vein/commands/reindex.py`（增量 + `--all` + 維度探測）
+- `src/vein/commands/status.py`（index 健康度）
+- `tests/test_index.py`（新）
+- `docs/decisions.md` D-030、`docs/usage.md` recall/reindex 章節
+
+**追加：entry id 碰撞（原 `test_new_id_unique` 0.33% flake 的真身）**
+- id 格式 `YYYYMMDD-HHMMSS-xxxx`，同秒內唯一性全靠 2-byte 後綴：同秒 20 筆 → ~0.3% 碰撞（生日界），
+  batch import 撞上 = 後寫的 `.md` **靜默覆蓋**前一筆 → 資料遺失，不只是測試 flaky
+- 修法兩層：(1) `Entry.new_id()` 記住當秒已發出的 id，重複就 re-roll（跨秒自動清空，記憶體恆小）；
+  (2) `write_entry` 對「本 process 剛鑄出的 id」撞到既存檔案時 re-roll —— 跨 process 同秒碰撞防護。
+  範圍刻意限縮在 `_issued_ids`：migrate/import re-run 帶舊 id 覆寫是**故意的冪等行為**，不能誤傷
+- 驗證：3000 輪 × 20 id 碰撞 10 次 → **0 次**；60000 連續 id 全唯一；全 suite 30 輪 0 flake
+
+**Review round 2（同 session 複查）：**
+- **Stale-writer 自癒**（真實踩到）：plugin 的 MCP server 是升級前啟動的長駐 process，改完 code 後
+  它還在用舊 module 寫入——JSON vector + 未斷詞 FTS，而 migration marker 已是 v2，一次性遷移
+  永遠看不到這些列。修法：每次開 DB 跑 `_heal_v1_rows()`（`typeof(vector)='text'` 掃描，幾 ms，
+  平常為空），就地轉 BLOB + 重斷詞 FTS；維度不符再由增量 reindex 補嵌。實測 3 筆被舊 process
+  寫入的 entry 完整復活
+- `_setup` 不再每次開檔都寫 meta（marker 相同就跳過）——搜尋路徑不該拿 write lock
+- `needs_reindex` IN-clause 改 500 筆分批（部分 SQLite build 綁定參數上限 999，corpus 破千就炸）
+- `vein status` 從 ~7 次全店 YAML parse 降到 1 次；新增 unparseable frontmatter 警告（點名檔案，
+  不再只是 counts 差 1 的隱形誤差）
+- `vein reindex` 的 stale-row sweep 改用 filename glob（`store.entry_ids()`），省掉第二次全店 parse
+- `grep_entries` 排序修正：同分原本莫名 oldest-first（兩次 sort 疊加的殘留），改 score desc → date desc
+
+**雷區記錄：**
+- **長駐 process + in-place 升級 = 舊 code 繼續寫新資料**。一次性 migration 治不了這個，
+  要嘛 schema 自癒、要嘛寫入端版本檢查。MCP server / daemon 類的都會踩
+- `zip()` 算 cosine 是**靜默錯誤**——長度不等不噴錯，只回一個看起來合理的數字
+- `LIMIT` 沒有 `ORDER BY` 在 append-only 表裡 = 「最舊的 N 筆」。最惡毒的一環：
+  系統看起來有在運作，只是永遠回答錯的東西
+- 參數 default 寫死模型名 = 漂移溫床。default 該指向設定來源，不是具體值
+
+**Next session entry point:**
+1. `vein gc` / `prune_noise.py` 之後確認 `stale_ids` 清理有生效
+2. corpus 破 50K 再評估 sqlite-vec ANN（目前全掃 200ms 完全夠）
+3. Lode `.vein/`（38 筆、0 embedded）也該跑一次 `vein reindex`
