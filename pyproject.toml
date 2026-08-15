@@ -43,7 +43,11 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+# Must match requires-python above. At py311 ruff kept flagging UP017
+# (`datetime.UTC`), which only exists in 3.11 — applying that fix would have
+# broken the package on the 3.10 it claims to support, and on the interpreter
+# this repo is actually developed against.
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

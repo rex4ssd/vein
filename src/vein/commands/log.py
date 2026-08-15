@@ -216,3 +216,13 @@ def cmd_log(
     console.print(f"  [bold]{entry.title}[/]")
     if entry.tags:
         console.print(f"  [dim]tags: {', '.join(entry.tags)}[/]")
+
+    # The file is written either way, but a failed index means the entry is
+    # invisible to recall until someone reindexes — say so rather than let a
+    # green ✓ imply it is searchable.
+    if store.last_index_ok is False:
+        console.print("  [yellow]⚠ keyword-only — no embedding (ollama offline). "
+                      "Run `vein reindex` later.[/]")
+    elif store.last_index_ok is None:
+        console.print("  [yellow]⚠ not indexed — index unavailable. "
+                      "Run `vein reindex`.[/]")

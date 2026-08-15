@@ -93,7 +93,32 @@ class VeinIndex:
         self.last_dim_mismatch = 0
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self._tune()
         self._setup()
+
+    def _tune(self) -> None:
+        """Make concurrent access survivable.
+
+        Several vein processes routinely touch one store at once: a long-lived
+        MCP server, an interactive CLI, and a post-commit hook running debrief.
+        With the stock settings (rollback journal, ``busy_timeout=0``) the
+        second writer blocks ~5s and then raises ``database is locked`` —
+        and ``write_entry`` swallows that, so the entry lands on disk and is
+        never indexed. Same silent-gap failure we fix elsewhere, different door.
+
+        WAL lets readers and writers proceed concurrently; busy_timeout makes
+        writers queue instead of failing. Both are best-effort: WAL needs real
+        POSIX shared memory and is refused on network mounts, which is exactly
+        where ``VeinStore.open_index`` already relocates the DB.
+        """
+        try:
+            self.conn.execute("PRAGMA busy_timeout = 10000")
+            self.conn.execute("PRAGMA journal_mode = WAL")
+            # Safe under WAL: a crash can lose the last commits but cannot
+            # corrupt the DB, and the index is regenerable from .vein/*.md.
+            self.conn.execute("PRAGMA synchronous = NORMAL")
+        except sqlite3.Error:
+            pass
 
     def _setup(self) -> None:
         self.conn.executescript(_DDL)

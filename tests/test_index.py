@@ -278,6 +278,30 @@ def test_migration_converts_json_vectors_and_resegments_fts(tmp_path):
     assert [h[0] for h in hits] == ["e1"]           # JSON → BLOB, still comparable
 
 
+def test_wal_mode_lets_readers_work_during_a_write(tmp_path):
+    """Several vein processes share one store (MCP server, CLI, commit hook).
+
+    Under the stock rollback journal a reader blocks behind any open write
+    transaction and then raises `database is locked`; recall swallows that and
+    silently degrades. WAL is what makes concurrent access survivable.
+    """
+    import sqlite3
+
+    db = tmp_path / "vein.db"
+    idx = VeinIndex(db)
+    assert idx.conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    assert idx.conn.execute("PRAGMA busy_timeout").fetchone()[0] > 0
+
+    writer = sqlite3.connect(db)
+    writer.execute("BEGIN IMMEDIATE")
+    writer.execute("INSERT INTO meta VALUES ('held', '1')")
+    try:
+        assert VeinIndex(db).count_indexed() == 0  # would raise pre-WAL
+    finally:
+        writer.rollback()
+        writer.close()
+
+
 def test_stale_v1_writer_rows_healed_on_open(tmp_path):
     """Rows written into an already-migrated DB by a stale v1 process (e.g. a
     long-lived MCP server that imported vein before the upgrade) must be

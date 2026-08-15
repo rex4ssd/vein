@@ -580,3 +580,58 @@ Bug 3 是 Rex 說的「寫得進 storage 但不在語意索引裡」的真正機
 1. `vein gc` / `prune_noise.py` 之後確認 `stale_ids` 清理有生效
 2. corpus 破 50K 再評估 sqlite-vec ANN（目前全掃 200ms 完全夠）
 3. Lode `.vein/`（38 筆、0 embedded）也該跑一次 `vein reindex`
+
+---
+
+## Session — 2026-08-15：全面 review（D-031）
+
+D-030 修完 recall 後的系統性複查（兩個 Explore agent 掃 core + command 層，
+共 67 條發現，修掉高影響的 20 條）。主線：**vein 很少壞掉，它安靜地做錯事或什麼都不做。**
+
+**Top 4（都是「看起來在運作」）：**
+
+| # | 問題 | 影響 |
+|---|------|------|
+| 1 | SQLite 無 WAL、`busy_timeout=0` | 併發下第二個 writer 卡 5.2s 後失敗，`write_entry` 吞掉 → entry 落地但 index 0 筆 |
+| 2 | `vein hooks install` 完全 no-op | git 把 hook stdin 接 `/dev/null`，debrief 讀到 `""` 直接 return；`--silent` 再吞掉訊息 |
+| 3 | brief 每條標題印兩次 | MCP 捕獲的 body 是 `**Why:** <原訊息>`，title 是同段截斷 → 1695 tokens 有一半是重複 |
+| 4 | 一個沒引號的日期讓 entry 消失 | `date: 2026-01-01` → `datetime.date` 無 tzinfo → 拋錯 → `iter_entries` 吞掉 → 全域看不到 |
+
+**修法與實測：**
+- WAL + busy_timeout=10000 + synchronous=NORMAL（best-effort，network mount 會 fallback）
+  → 同樣競爭情境從「5.2s 後靜默丟失」變成「等 1.2s 後成功」；讀取完全不再被寫入阻塞
+- debrief 改「先試 stdin，空的 fallback 到 git」→ hook 真的會跑了，`--since` 對 script 也生效
+- `_detail()` 偵測 detail 重複 title 就丟棄 → brief **1695 → 780 tokens（-54%）**
+- `_parse_dt` 接受所有 YAML 形狀且永不拋錯；`from_file` 全改 `or default`
+  （`.get(k, default)` 防不了 explicit null）
+- `body_section` 的 `[:\*]*` → `[:*]+`：`Why` 不再撈到 `**Why not:**` 的內容（這段直接進 brief）
+- `ask` / `list` 改成先 filter 再 truncate（`--tag project:letpiano` 實測真實有 93 筆，
+  舊行為只看得到落在最新 50 內的）
+- `gc --older-than` 改用 `effective_date`，不再刪掉上週剛重新驗證的 entry
+- `_find_git_dir` 認 `.git` 檔案（worktree / submodule），否則會裝到外層 superproject
+- `core.hooksPath` 檢查（Husky / pre-commit / lefthook 都會設，設了 git 就不看 .git/hooks/）
+- debrief 錯誤分類：HTTP 404「模型沒 pull」不再回報成「nothing worth logging」
+- `import` / `debrief` 改用 `store.model_cfg()`（原本手刻，`model:` 留空會 crash，
+  且 import 重新 hardcode 了 D-030 的元兇 nomic-embed-text）
+- `ruff target-version` py311 → py310，對齊 `requires-python`（否則 ruff 建議的
+  `datetime.UTC` 會炸掉宣稱支援的 3.10）
+
+**效能實測（958 entries 真實 store）：**
+```
+recall 端到端 : 0.52–0.66s（首次 6s = ollama 冷載入）
+  ollama embed :  115ms  ← 主要成本，非我方 code
+  vector scan  :   25ms  （957 × 2560 維，numpy）
+  fts search   :    3ms
+brief         : 1.17s（原本 3 次 list_entries + stats glob → 1 次掃描）
+status        : 1.10s（原本 ~7 次全店 YAML parse → 1 次）
+```
+全 corpus 掃描在 10 倍語料下才 252ms，D-030 記的 sqlite-vec 門檻（~50K）仍然成立。
+
+**tests:** 121 passed（新增 test_brief.py 18 個、test_commands.py 8 個）
+**lint:** 132 → 99 errors
+
+**Next session entry point:**
+1. `import` 重複匯入會產生完整重複（無 dedupe）——需要 content hash 或保留 id
+2. `gc --committed` 每個 entry spawn 2 個 git subprocess（958 筆 ≈ 1916 次）
+3. `cross_project_search` 每個註冊專案一次全店 YAML parse，序列執行、無快取
+4. `registry.txt` 非原子寫入，中斷會摧毀整份註冊表（唯一副本）

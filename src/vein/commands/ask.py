@@ -34,18 +34,23 @@ def cmd_ask(question: str, limit: int, entry_type: str | None,
       vein ask "app store reject" -x        # search across all projects
     """
     store = VeinStore.require()
-    results = store.grep_entries(question, limit=limit)
 
-    # filter by type if requested
+    # Filter, then truncate. The other order kept the top `limit` matches across
+    # all types and only then dropped the non-matching types, so
+    # `vein ask "..." --type pitfall` usually reported "No results" while a
+    # dozen matching pitfalls sat in the store.
+    results = store.grep_entries(question, limit=None)
     if entry_type:
         results = [(e, s) for e, s in results if e.type == entry_type]
+    results = results[:limit]
 
     # cross-project hits (other registered repos)
     xhits = []
     if cross_project:
-        xhits = cross_project_search(question, exclude_root=store.root, limit=limit)
+        xhits = cross_project_search(question, exclude_root=store.root, limit=None)
         if entry_type:
             xhits = [(p, e, s) for p, e, s in xhits if e.type == entry_type]
+        xhits = xhits[:limit]
 
     if not results and not xhits:
         console.print(f"[yellow]No results for:[/] {question}")

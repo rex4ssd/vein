@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -38,9 +38,25 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
 
 
 def _parse_dt(value) -> datetime:
-    """Coerce a frontmatter date value (str or datetime) to tz-aware UTC."""
+    """Coerce a frontmatter date value to tz-aware UTC. Never raises.
+
+    Frontmatter is hand-editable, so every shape YAML can produce has to land
+    somewhere. An unquoted ``date: 2026-01-01`` parses to ``datetime.date``,
+    which has no ``tzinfo`` — that used to raise, and ``iter_entries`` catches
+    bare Exception and skips, so one unquoted date made an entry vanish from
+    every listing, recall and count with no message at all.
+    """
     if isinstance(value, str):
-        value = datetime.fromisoformat(value)
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return datetime.now(timezone.utc)
+    # date is not a subclass of datetime, but datetime IS a subclass of date —
+    # so check the narrow type first.
+    if isinstance(value, date) and not isinstance(value, datetime):
+        value = datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+    if not isinstance(value, datetime):
+        return datetime.now(timezone.utc)
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value
@@ -161,19 +177,23 @@ class Entry:
         verified_raw = fm.get("verified_at")
         verified_at = _parse_dt(verified_raw) if verified_raw else None
 
+        # `or <default>` throughout, not `.get(k, default)`: a frontmatter key
+        # written with no value (`status:`) parses to None, and .get's default
+        # only fires when the key is *absent*. A None status compares unequal to
+        # "active", which silently drops the entry from every default listing.
         entry = cls(
-            id=fm.get("id", path.stem),
-            type=fm.get("type", "lore"),
-            title=fm.get("title", ""),
+            id=fm.get("id") or path.stem,
+            type=fm.get("type") or "lore",
+            title=fm.get("title") or "",
             tags=fm.get("tags") or [],
             date=date_val,
-            source=fm.get("source", "local"),
-            source_url=fm.get("source_url", ""),
-            source_title=fm.get("source_title", ""),
+            source=fm.get("source") or "local",
+            source_url=fm.get("source_url") or "",
+            source_title=fm.get("source_title") or "",
             related=fm.get("related") or [],
-            status=fm.get("status", "active"),
-            superseded_by=fm.get("superseded_by", ""),
-            volatility=fm.get("volatility", "unknown"),
+            status=fm.get("status") or "active",
+            superseded_by=fm.get("superseded_by") or "",
+            volatility=fm.get("volatility") or "unknown",
             verified_at=verified_at,
             body=body,
         )
@@ -235,10 +255,20 @@ class Entry:
         return self.title
 
     def body_section(self, name: str) -> str:
-        """Extract a named section (e.g. 'Why:') from the body."""
-        pattern = re.compile(rf"^\*\*{re.escape(name)}[:\*]*(.*?)(?=\n\*\*|\Z)",
-                              re.MULTILINE | re.DOTALL)
+        """Extract a named section (e.g. ``**Why:** …``) from the body.
+
+        The name must be followed by at least one ``:`` or ``*``. The quantifier
+        used to be ``[:\\*]*`` — zero allowed — so ``body_section("Why")`` matched
+        the *prefix* of the heading ``**Why not:**`` and returned the
+        rejected-alternatives text as the rationale. That text feeds the session
+        brief, so briefs have been quoting "why we did NOT do X" as the why.
+
+        Matching is case-insensitive because bodies come from an LLM, which does
+        not reliably reproduce the casing the caller asks for.
+        """
+        pattern = re.compile(
+            rf"^\*\*{re.escape(name)}[:*]+[ \t]*(.*?)(?=\n\*\*|\Z)",
+            re.MULTILINE | re.DOTALL | re.IGNORECASE,
+        )
         m = pattern.search(self.body)
-        if m:
-            return m.group(1).strip()
-        return ""
+        return m.group(1).strip() if m else ""

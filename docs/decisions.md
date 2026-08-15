@@ -1480,3 +1480,100 @@ if not candidate_ids:                      # ← 中文查詢幾乎必定走這�
 - **參數 default 寫死模型名是漂移的溫床**。default 應該指向設定來源，不是某個具體值
 
 **Revisit when：** corpus 破 50K → 換 sqlite-vec ANN，全 corpus 掃描會開始有感
+
+---
+
+### D-031 — 全面 review：並發、死功能、靜默錯值（2026-08-15）
+
+D-030 修完 recall 之後做的系統性複查。找到的問題有一條共同主線：
+**vein 很少「壞掉」，它會安靜地做錯事或什麼都不做**，所以沒人發現。
+
+**1. SQLite 併發：entry 落地但不進 index（跟 D-030 同一個 bug class，不同觸發路徑）**
+
+`sqlite3.connect()` 用預設值 = rollback journal + `busy_timeout=0`。
+Rex 的工作流一定會併發：長駐 MCP server ＋ 互動 CLI ＋ post-commit hook。
+實測第二個 writer **卡 5.2 秒後 `database is locked`**，而 `write_entry` 的
+`except Exception: pass` 把它吞掉 → 檔案寫進磁碟，index 裡 0 筆，recall 永遠撈不到。
+
+修：開 DB 時 `PRAGMA journal_mode=WAL` ＋ `busy_timeout=10000` ＋ `synchronous=NORMAL`。
+WAL 讓讀不再被寫阻塞（recall 完全不受影響），busy_timeout 讓寫入排隊而不是失敗。
+實測同樣情境變成「等 1.2 秒後成功」。三個 PRAGMA 都是 best-effort——WAL 需要真的
+POSIX 共享記憶體，network mount 會拒絕，而那正是 `open_index` 已經會搬家的情況。
+
+**2. `vein hooks install` 是完整的 no-op（headline feature 從來沒動過）**
+
+hook 內容是 `vein debrief --silent`，而 debrief 判斷輸入來源用：
+```python
+if not sys.stdin.isatty():
+    diff = sys.stdin.read().strip()   # git 把 hook 的 stdin 接到 /dev/null
+else:
+    diff = _get_diff(since)           # ← 從 hook 執行時永遠到不了
+```
+git 執行 hook 時 stdin 是 `/dev/null` → `isatty()` False → 讀到 `""` → 直接 return。
+`--silent` 又把訊息吞掉。**每次 commit 都靜默什麼都沒做**，而 CLAUDE.md §3 把它列為已完成。
+同一個 bug 讓 `--since` 對所有非互動呼叫（script / CI / cron）失效。
+
+修：改成 `先試 stdin，空的就 fallback 到 git`。pipe 用法（`git diff | vein debrief`）不受影響。
+
+**3. brief 每條標題印兩次——吃掉一半 token 預算**
+
+MCP `vein_log` 走 `fallback_polish`，它把原訊息存成 `**Why:** <訊息>`，
+title 則是同一段的截斷。brief 渲染 `**{title}** — {why}` 就變成同一句話印兩次。
+MCP 是 Rex 的主要捕獲路徑，所以**整份 brief 幾乎都是重複的**。
+brief 存在的唯一理由就是塞進 token 預算，這等於把它的價值砍半。
+
+修：`_detail()` 偵測 detail 是不是 title 的重複，是就丟掉。實測 **1695 → 780 tokens（-54%）**。
+
+**4. 一個沒引號的日期讓 entry 從所有地方消失**
+
+`date: 2026-01-01`（YAML 不加引號）→ `datetime.date`，沒有 `tzinfo` →
+`_parse_dt` 拋 `AttributeError` → `iter_entries` 的 `except Exception: continue` 吞掉
+→ 該 entry 在 list / recall / brief / status / reindex 全部看不到，**沒有任何訊息**。
+同類：frontmatter 寫 `status:` 留空 → `None` → `!= "active"` → 同樣從預設列表消失。
+
+修：`_parse_dt` 接受所有 YAML 能產出的形狀且永不拋錯；`from_file` 全部改用
+`fm.get(k) or default`（`.get(k, default)` 只在 key **不存在**時才給預設值）。
+`vein status` 另外會點名 frontmatter 壞掉的檔案，不再只是 counts 差 N 的隱形誤差。
+
+**5. `body_section("Why")` 會撈到 `**Why not:**` 的內容**
+
+`[:\*]*` 允許零個終止符，所以 `Why` 匹配到 `**Why not:**` 的前綴，
+回傳「我們為什麼**不**做 X」當成「為什麼做」。這段直接進 brief。
+修：改 `[:*]+`（至少一個終止符）＋ 大小寫不敏感（body 是 LLM 產的，casing 不可靠）。
+
+**6. filter 在 limit 之後 → 「查無結果」但其實有一堆**
+
+`vein ask "x" --type pitfall`：先取全類型 top-5，**再**濾 pitfall → 通常 0～1 筆。
+`vein list --tag dma`：先取最新 50 筆，**再**濾 tag → 只看得到剛好落在最新 50 的。
+實測本 repo `--tag project:letpiano` 真實有 93 筆。
+修：先 filter 再 truncate。順帶 `--status` 的 Choice 對齊真實的 `EntryStatus`
+（`archived` 沒有任何 code 會寫，`resolved` 是真的但沒列出來）。
+
+**其他修掉的：**
+- `vein gc --older-than` 用 `date` 而非 `effective_date`，會刪掉上週才重新驗證過的 entry
+  （`--stale` 有尊重 `verified_at`，兩個 filter 互相矛盾）；dry-run 顯示的年齡也是錯的
+- `vein gc --type` 被 advertise 成獨立 filter 但沒進 `any([...])` → 叫使用者加他剛加的 flag
+- `hooks remove` 靠整段 byte-exact match，手改過一行就整個 no-op 但照印「✓ Removed」
+- `_find_git_dir` 只認 `.git` 目錄 → worktree / submodule（`.git` 是**檔案**）會裝到
+  外層 superproject。Rex 有 15 個 iOS app 共用 workspace，這個會踩
+- `core.hooksPath` 從未被檢查（Husky / pre-commit / lefthook 都會設）→ git 根本不看
+  `.git/hooks/`，但 vein 照回報「✓ installed」
+- debrief 把「模型沒 pull（HTTP 404）」和「httpx 沒裝」都回報成
+  「nothing worth logging」/「connection error」→ 使用者永遠查不出真因
+- `import` / `debrief` 手刻 config 讀取，`model:` 留空會 crash，且 import 重新
+  hardcode 了 D-030 的元兇 `nomic-embed-text`；改用 `store.model_cfg()`
+- `import --no-index` 寫完什麼都不說，200 筆全部搜不到但印綠色 ✓
+- `auto_title("")` IndexError（MCP / debrief / fetch 的無-ollama 路徑都會過這裡）
+- `needs_reindex` IN-clause 未分批（部分 SQLite build 上限 999，corpus 破千就炸）
+- `vein status` 從 ~7 次全店 YAML parse 降到 1 次
+- `ruff target-version = "py311"` 與 `requires-python = ">=3.10"` 矛盾，
+  害 ruff 一直建議 `datetime.UTC`（3.11 才有）——照做會炸掉宣稱支援的 3.10
+
+**雷區：**
+- **`except Exception: pass` 是這個 codebase 最大的單一風險來源。** 上面幾乎每一條
+  「安靜做錯事」都有一個吞例外的 handler 在中間。要吞可以，但要留下痕跡
+  （`last_index_ok`、`_LAST_ERROR`、status 的警告行都是為此加的）
+- **`.get(key, default)` 防不了 explicit null。** YAML 的 `key:` 是 `None` 不是缺席，
+  要 `or default`
+- **stdin 的 `isatty()` 只能判斷「是不是終端」，不能判斷「有沒有資料」。**
+  `/dev/null` 兩者皆非，這是 hook 死掉的根因

@@ -394,11 +394,14 @@ class VeinStore:
 
     # ── search (simple grep — Phase 0) ────────────────────────────
 
-    def grep_entries(self, query: str, limit: int = 10) -> list[tuple[Entry, int]]:
+    def grep_entries(
+        self, query: str, limit: int | None = 10
+    ) -> list[tuple[Entry, int]]:
         """
         Simple keyword search across title + body.
         Returns [(entry, score)] sorted by score desc.
         score = number of query terms matched (case-insensitive).
+        ``limit=None`` returns every match, for callers that filter afterwards.
         """
         terms = [t.lower() for t in query.split() if t.strip()]
         if not terms:
@@ -417,14 +420,14 @@ class VeinStore:
         # pass quietly left ties oldest-first.)
         results.sort(key=lambda x: x[0].date, reverse=True)
         results.sort(key=lambda x: x[1], reverse=True)
-        return results[:limit]
+        return results[:limit] if limit else results
 
 
 def cross_project_search(
     query: str,
     *,
     exclude_root: Path | None = None,
-    limit: int = 5,
+    limit: int | None = 5,
 ) -> list[tuple[str, Entry, int]]:
     """Keyword-search every registered .vein/ except ``exclude_root``.
 

@@ -156,8 +156,16 @@ def _parse_json_response(content: str) -> list[dict] | None:
 # ── fallback (no ollama) ─────────────────────────────────────────
 
 def auto_title(raw_text: str) -> str:
-    """Generate a basic title from raw text (first sentence, ≤100 chars)."""
-    first = raw_text.strip().splitlines()[0].strip()
+    """Generate a basic title from raw text (first sentence, ≤100 chars).
+
+    Empty or whitespace-only input used to raise IndexError off
+    ``splitlines()[0]``. This is the no-ollama path behind ``vein log``, MCP
+    ``vein_log`` and ``debrief``, so `vein log lore ""` was a raw traceback.
+    """
+    lines = [ln.strip() for ln in raw_text.strip().splitlines() if ln.strip()]
+    if not lines:
+        return "(untitled)"
+    first = lines[0]
     first = re.sub(r"[.!?]+$", "", first)
     if len(first) > 100:
         first = first[:97] + "…"

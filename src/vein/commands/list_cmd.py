@@ -23,8 +23,11 @@ _TYPE_COLORS = {
               type=click.Choice(["decision", "lore", "pitfall", "reference"]),
               default=None,
               help="Filter by entry type")
+# Must match EntryStatus in core/models.py. "archived" was offered here but is
+# never written by anything, so `--status archived` always found nothing; the
+# real "resolved" status was missing, so resolved entries were invisible.
 @click.option("--status", default="active",
-              type=click.Choice(["active", "superseded", "archived", "all"]),
+              type=click.Choice(["active", "resolved", "superseded", "all"]),
               show_default=True)
 @click.option("--tag", "tag_filter", default=None, help="Filter by tag (substring match)")
 @click.option("--limit", "-n", default=50, show_default=True)
@@ -48,15 +51,19 @@ def cmd_list(
     store = VeinStore.require()
     status_arg = None if status == "all" else status
 
+    # Tag-filter first, then truncate — passing limit into list_entries kept the
+    # newest N entries of *any* tag and only then filtered, so `--tag dma`
+    # showed just the dma entries that happened to fall in the newest 50.
     entries = store.list_entries(
         type_filter=entry_type,
         status_filter=status_arg,
-        limit=limit,
     )
 
     if tag_filter:
         tag_low = tag_filter.lower()
-        entries = [e for e in entries if any(tag_low in t for t in e.tags)]
+        entries = [e for e in entries if any(tag_low in t.lower() for t in e.tags)]
+
+    entries = entries[:limit]
 
     if not entries:
         console.print("[yellow]No entries found.[/]")

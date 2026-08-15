@@ -92,10 +92,11 @@ def _trim_diff(diff: str) -> str:
     return diff[:_DIFF_TOO_LARGE] + f"\n... (diff trimmed at {_DIFF_TOO_LARGE} chars)"
 
 
-class _OllamaResult:
-    """Distinguish connection failure from 'model found nothing'."""
-    UNAVAILABLE = None          # couldn't reach ollama
-    EMPTY: list = []            # reached, but nothing worth logging
+# Why a module-level list rather than a return value: _call_ollama_debrief's
+# contract is None/[]/[entries], and every caller branches on that. This carries
+# the *reason* alongside it so the user gets "model not pulled" instead of a
+# uniform "skipped". Single-threaded CLI; cleared at each call site.
+_LAST_ERROR: list[str] = []
 
 
 def _call_ollama_debrief(diff: str, base_url: str, model: str):
@@ -109,6 +110,7 @@ def _call_ollama_debrief(diff: str, base_url: str, model: str):
     try:
         import httpx
     except ImportError:
+        _LAST_ERROR.append("httpx not installed — pip install httpx")
         return None
 
     payload = {
@@ -158,7 +160,17 @@ def _call_ollama_debrief(diff: str, base_url: str, model: str):
 
     except (httpx.ConnectError, httpx.TimeoutException):
         return None         # genuine connection failure
-    except Exception:
+    except httpx.HTTPStatusError as exc:
+        # 404 = model not pulled. Reporting this as "nothing worth logging"
+        # meant a user with a typo'd or uninstalled debrief_model got a calm,
+        # confident no-op on every single commit with no way to find out why.
+        _LAST_ERROR.append(
+            f"ollama returned HTTP {exc.response.status_code} for model "
+            f"'{model}' — is it pulled? (ollama pull {model})"
+        )
+        return None
+    except Exception as exc:
+        _LAST_ERROR.append(f"{type(exc).__name__}: {exc}")
         return []           # parse error / other — treat as nothing found
 
 
@@ -199,17 +211,31 @@ def cmd_debrief(since: str, silent: bool, dry_run: bool, model: str) -> None:
         return
 
     cfg = store.load_config()
-    base_url    = cfg.get("model", {}).get("base_url",      "http://localhost:11434")
+    # `or {}`: a bare `model:` key parses to None, and .get's default only fires
+    # when the key is absent — hand-rolled reads like this crashed on it.
+    model_cfg = cfg.get("model") or {}
+    base_url, _ = store.model_cfg()
     debrief_model = (
         model
-        or cfg.get("model", {}).get("debrief_model")
-        or cfg.get("model", {}).get("polish_model", "qwen2.5-coder:7b")
+        or model_cfg.get("debrief_model")
+        or model_cfg.get("polish_model")
+        or "qwen2.5-coder:7b"
     )
 
     # ── get diff ─────────────────────────────────────────────────────────
+    # Piped input wins, but an empty non-TTY stdin must fall through to git.
+    # Git runs hooks with stdin on /dev/null, so `isatty()` is False there and
+    # the old if/else took the pipe branch, read "", and returned — meaning the
+    # post-commit hook installed by `vein hooks install` has never captured
+    # anything, silently, on every commit. It also made `--since` a no-op for
+    # any non-interactive caller (scripts, CI, cron).
+    diff = ""
     if not sys.stdin.isatty():
-        diff = sys.stdin.read().strip()
-    else:
+        try:
+            diff = sys.stdin.read().strip()
+        except (OSError, ValueError):
+            diff = ""
+    if not diff:
         diff = _get_diff(since)
 
     if not diff:
@@ -223,16 +249,25 @@ def cmd_debrief(since: str, silent: bool, dry_run: bool, model: str) -> None:
     if not silent:
         console.print(f"[dim]debrief: analysing diff with {debrief_model}…[/]", end=" ")
 
+    _LAST_ERROR.clear()
     results = _call_ollama_debrief(diff, base_url=base_url, model=debrief_model)
+    reason = _LAST_ERROR[0] if _LAST_ERROR else ""
 
     if results is None:
         if not silent:
-            console.print("[yellow]ollama unavailable (connection error) — skipped[/]")
+            console.print(
+                f"[yellow]skipped — {reason}[/]" if reason
+                else "[yellow]ollama unavailable (connection error) — skipped[/]"
+            )
         return
 
     if not results:
         if not silent:
-            console.print("[dim]nothing worth logging[/]")
+            # A parse failure is not the same as "the diff was uninteresting".
+            console.print(
+                f"[yellow]no entries — {reason}[/]" if reason
+                else "[dim]nothing worth logging[/]"
+            )
         return
 
     if not silent:

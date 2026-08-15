@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 
 import click
@@ -128,9 +127,10 @@ def cmd_import(
       vein import notes/dma_notes.md --type lore
     """
     store = VeinStore.require()
-    cfg = store.load_config()
-    base_url  = cfg.get("model", {}).get("base_url", "http://localhost:11434")
-    embed_model = cfg.get("model", {}).get("embed_model", "nomic-embed-text")
+    # model_cfg() reads the project config and tolerates a null `model:` key;
+    # the hand-rolled version here crashed on that and re-hardcoded
+    # "nomic-embed-text", the default that left 747 entries unsearchable (D-030).
+    base_url, embed_model = store.model_cfg()
 
     # detect source format
     text_preview = source.read_text(encoding="utf-8")[:500]
@@ -141,7 +141,7 @@ def cmd_import(
         console.print(f"[dim]Detected decisions.md format — {len(raw_entries)} D-xxx blocks[/]")
     else:
         raw_entries = _parse_plain_md(source)
-        console.print(f"[dim]Plain markdown — importing as 1 entry[/]")
+        console.print("[dim]Plain markdown — importing as 1 entry[/]")
 
     if not raw_entries:
         console.print("[yellow]Nothing to import.[/]")
@@ -161,10 +161,10 @@ def cmd_import(
     # import loop
     written = 0
     skipped = 0
+    unindexed = 0
 
     for r in track(raw_entries, description="Importing…", console=console):
         from datetime import datetime, timezone
-        from ..core.models import Entry
 
         date_hint = r.get("date_hint")
         if date_hint:
@@ -193,6 +193,8 @@ def cmd_import(
                 embed_model=embed_model,
             )
             written += 1
+            if store.last_index_ok is not True:
+                unindexed += 1
         except Exception as exc:
             console.print(f"[red]Failed:[/] {entry.title[:60]} — {exc}", highlight=False)
             skipped += 1
@@ -201,4 +203,17 @@ def cmd_import(
         f"\n[green]Imported {written}[/] entr{'y' if written == 1 else 'ies'}."
         + (f"  [yellow]{skipped} skipped.[/]" if skipped else "")
     )
-    console.print(f"[dim]Run [bold]vein status[/] to see the updated counts.[/]")
+    # A bulk import with ollama down writes N files and zero embeddings. `status`
+    # counts files, so it happily confirms the import while none of it is
+    # searchable — say so here instead of letting a green ✓ imply otherwise.
+    if no_index:
+        console.print(
+            "[yellow]Not indexed[/] (--no-index) — run [bold]vein reindex[/] "
+            "to make these searchable."
+        )
+    elif unindexed:
+        console.print(
+            f"[yellow]{unindexed} of {written} got no embedding[/] "
+            f"(ollama unreachable) — run [bold]vein reindex[/] when it is back."
+        )
+    console.print("[dim]Run [bold]vein status[/] to see the updated counts.[/]")

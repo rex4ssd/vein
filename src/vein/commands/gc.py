@@ -95,7 +95,10 @@ def cmd_gc(
       vein gc --older-than 90 --type reference # purge old reference entries
       vein gc --committed --older-than 30      # safe: only remove git-committed
     """
-    if not any([stale, older_than, collection]):
+    # entry_type belongs in this list — it is advertised as a standalone filter
+    # in the message below and in the usage block, but was omitted here, so
+    # `vein gc --type reference` told the user to pass the flag they just passed.
+    if not any([stale, older_than, collection, entry_type]):
         console.print(
             "[yellow]Nothing to do.[/] Specify at least one filter:\n"
             "  --stale, --older-than N, --collection NAME, --type T"
@@ -118,19 +121,31 @@ def cmd_gc(
             coll_tag = f"study:{collection}"
             if coll_tag not in e.tags:
                 continue
-            # --keep-compare: skip the summary entry
-            if keep_compare and e.source.startswith(f"study:compare:"):
-                continue
+
+        # --keep-compare: spare study comparison summaries. Checked outside the
+        # collection block so it also applies to `gc --stale`, and scoped to the
+        # named collection when there is one (the source is
+        # "study:compare:<collection>"; the old test dropped the interpolation
+        # and so spared other collections' summaries too).
+        if keep_compare and e.source.startswith(
+            f"study:compare:{collection}" if collection else "study:compare:"
+        ):
+            continue
 
         # stale filter
         if stale and not e.is_stale:
             continue
 
-        # age filter
+        # age filter — effective_date, not date. effective_date is
+        # `verified_at or date`, i.e. the last point the entry was known good;
+        # using raw capture time deleted entries the user re-verified last week
+        # just because they were first written two years ago. `--stale` already
+        # respects verification, so the two filters disagreed.
         if older_than:
-            age = (now - e.date.replace(tzinfo=timezone.utc)
-                   if e.date.tzinfo is None else now - e.date).days
-            if age < older_than:
+            eff = e.effective_date
+            if eff.tzinfo is None:
+                eff = eff.replace(tzinfo=timezone.utc)
+            if (now - eff).days < older_than:
                 continue
 
         # --committed guard
@@ -157,10 +172,11 @@ def cmd_gc(
     table.add_column("Tags",  style="dim", max_width=30)
 
     for e in candidates:
-        age_days = (now - (e.date.replace(tzinfo=timezone.utc)
-                           if e.date.tzinfo is None else e.date)).days
-        tag_str  = ", ".join(t for t in e.tags if not t.startswith("source:"))[:30]
-        table.add_row(e.type, e.title[:55], f"{age_days}d", tag_str)
+        # e.age_days is measured from effective_date, matching the age filter —
+        # the preview used to compute a different age than the one that selected
+        # the entry, so --dry-run confirmed the wrong number.
+        tag_str = ", ".join(t for t in e.tags if not t.startswith("source:"))[:30]
+        table.add_row(e.type, e.title[:55], f"{e.age_days}d", tag_str)
 
     console.print(f"\n[bold]{len(candidates)}[/] entries selected for deletion"
                   + (" [dim](dry-run)[/]" if dry_run else "") + ":\n")
