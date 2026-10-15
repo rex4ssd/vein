@@ -635,3 +635,43 @@ status        : 1.10s（原本 ~7 次全店 YAML parse → 1 次）
 2. `gc --committed` 每個 entry spawn 2 個 git subprocess（958 筆 ≈ 1916 次）
 3. `cross_project_search` 每個註冊專案一次全店 YAML parse，序列執行、無快取
 4. `registry.txt` 非原子寫入，中斷會摧毀整份註冊表（唯一副本）
+
+---
+
+## Session — 2026-10-15：lore repo 4.5 個月沒備份 + 52 條誤刪復原（D-032）
+
+**起因：** 「檢查任何的 changes，都做 git commit & push」。父 repo `git status`
+乾淨、`HEAD == origin/main`，看起來無事可做。
+
+**實際發現：** `.vein/` 自己是獨立 git repo（`rex4ssd/vein_mind`），被父 repo 的
+`.gitignore` 完全遮蔽，所以父 repo 的 `git status` 連 `?? .vein/` 都不印。
+那個 repo 上次 commit 停在 **2026-05-31 的 init**：
+
+- **1333 條 entry 從未 commit**（decisions 585 / pitfalls 600 / lore 65 /
+  references 83）——Jun–Oct 四個半月的 lore 只存在本機磁碟，零備份
+- **52 條 entry 被刪除後未 commit deletion**，其中 23 條是 CLAUDE.md §3
+  列為已完成交付的「Lode 2 個月上架經驗」。驗證過磁碟零殘留
+  （`grep -rl hardenedRuntime` → 0）、未被重新匯入 `lode/.vein`、
+  也不在任何其他 store
+- **`.vein/.gitignore` 也在刪除清單裡**——少了它，`git add -A` 會把
+  22MB 的 `index/vein.db`（含 `-wal` / `-shm`）吃進 commit
+
+**做法：** 沒有直接 `git add -A`（那會把 52 條 deletion 一起 commit 掉）。
+先從 HEAD 復原 `.gitignore` / `STATUS.md` / 52 條 entry，秘密掃描確認乾淨，
+再連同 1333 條新 entry commit & push（vein_mind `9a138fe`）。
+
+復原到磁碟只修一半——`vein status` 立刻顯示「52 unindexed」，所以跑
+`vein reindex`（56 筆，qwen3-embedding:4b）把它們灌回索引。驗證
+`recall "notarize hardenedRuntime 憑證"` 第一筆就是復原的 pitfall。
+
+**store 現況：** 1385 entries（decision 604 / lore 67 / pitfall 630 /
+reference 83），1384/1385 embedded。剩的 1 筆是
+`references/lode-gap-2026-06-02.md`——Rex 的手寫資料檔，沒有 YAML
+frontmatter，`vein status` 會持續用「⚠ 1 file(s) with unparseable
+frontmatter」提示（D-031 加的）。
+
+**Trade-off：** 不把 lore 併回父 repo。lore 含跨專案內容，維持獨立 private
+repo 是 D-008（父 repo flip public）的前提。代價是收工要檢查兩個 repo。
+
+**雷區：** 父 repo clean ≠ lore 有備份。收工跑 `git -C .vein status`。
+看到大量 `D` 先查內容去哪了再決定要不要 commit。

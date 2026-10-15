@@ -5,11 +5,14 @@ from __future__ import annotations
 import shutil
 import sqlite3
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 import yaml
 
 from .models import Entry, EntryType
+
+if TYPE_CHECKING:
+    from .index import VeinIndex
 
 VEIN_DIR = ".vein"
 DEFAULT_BASE_URL = "http://localhost:11434"

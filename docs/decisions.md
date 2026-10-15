@@ -1577,3 +1577,40 @@ brief 存在的唯一理由就是塞進 token 預算，這等於把它的價值�
   要 `or default`
 - **stdin 的 `isatty()` 只能判斷「是不是終端」，不能判斷「有沒有資料」。**
   `/dev/null` 兩者皆非，這是 hook 死掉的根因
+
+---
+
+### D-032 — `.vein/` 是 nested git repo，父 repo 的 `git status` 永遠看不到（2026-10-15）
+
+**症狀：** 父 repo `git status` 乾淨、已 push，看起來一切就緒。實際上
+`.vein/` 自己是獨立 repo（`rex4ssd/vein_mind`），上次 commit 停在
+**2026-05-31 的 init**——Jun–Oct 寫進 store 的 **1333 條 entry 全部只存在
+本機磁碟，零備份**，而且有 52 條 entry 被刪除後從未 commit deletion。
+
+**為什麼看不到：** `.gitignore` 裡的 `.vein/`（commit 1b98186，理由是
+「knowledge lives in private rex4ssd/vein_mind」）讓父 repo 連
+`?? .vein/` 都不印。nested repo 不會被父 repo 的 `git status` 遞迴，
+所以「乾淨」只代表 code 乾淨，不代表 lore 有備份。
+
+**被刪的 52 條裡最嚴重的 23 條**，是 CLAUDE.md §3 列為已完成交付的
+「Lode 2 個月上架經驗」（app-store / cloudflare / notarize / seo）。
+驗證過：磁碟上零殘留（`grep -rl hardenedRuntime` → 0）、沒有被重新匯入
+`/Users/lion/Documents/lode/.vein`、也不在任何其他 store。只有
+`shell/import_lode_lore.py` 的 hardcoded 內容和 vein_mind 的 git history
+還留著。**再 commit 一次 deletion 就從 live store 徹底消失。**
+
+**修法：** 從 HEAD 復原 52 條 + `.gitignore` + `STATUS.md`，連同 1333 條
+新 entry 一起 commit & push（vein_mind `9a138fe`），再 `vein reindex`
+把復原的 56 筆灌進索引（復原到磁碟但不在索引＝只修一半，recall 還是撈不到）。
+
+**Trade-off：** 沒有把 lore 併回父 repo。lore 含跨專案內容與 Rex 的
+工作脈絡，維持獨立 private repo 是 D-008 visibility 策略的前提（父 repo
+要 flip public）。代價就是要記得分別 commit——這就是本條存在的理由。
+
+**雷區：**
+- **`.vein/` 收工時要單獨 commit。** 父 repo clean ≠ lore 有備份。
+  收工檢查要跑兩次：`git -C . status` 和 `git -C .vein status`
+- **`.vein/.gitignore` 不能掉。** 少了它，`git add -A` 會把
+  22MB 的 `index/vein.db`（含 `-wal` / `-shm`）一起吃進 commit
+- **看到大量 `D` 先查內容去哪了，不要直接 commit。** `git add -A` 對
+  deletion 一樣照收；lore repo 是這些 entry 在磁碟之外的唯一副本
